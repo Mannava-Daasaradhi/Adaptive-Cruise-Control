@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>cacc_platoon</name>
+  <version>0.2.0</version>
+  <description>Distributed CACC platoon simulation: one rclpy node per
+    vehicle, V2V channel node with delay / packet loss / multiplicative
+    noise (Ma, Pagilla, Darbha 2025), leader maneuver node and CSV recorder.
+    Control laws are imported from the shared `cacc` Python package.</description>
+  <maintainer email="daasaradhimannava@gmail.com">Daasaradhi Mannava</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>cacc_platoon_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>python3-numpy</depend>
+  <depend>python3-yaml</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

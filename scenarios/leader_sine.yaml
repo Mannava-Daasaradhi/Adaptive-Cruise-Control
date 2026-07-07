@@ -1,0 +1,39 @@
+# Sinusoidal leader acceleration: excites the platoon near the frequency
+# where |Gamma(jw)| peaks — the cleanest demonstration of wave amplification
+# (ACC) vs attenuation (CACC) along the vehicle string.
+name: leader_sine
+description: >
+  Leader oscillates its acceleration (amplitude 1 m/s^2, 0.1 Hz). Spacing
+  errors grow vehicle-by-vehicle under ACC and shrink under CACC.
+
+platoon:
+  n_followers: 5
+  v0: 20.0
+
+vehicle:
+  tau: 0.1
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.2
+  kd: 0.7
+  h: 0.7
+  r: 2.5
+
+network:
+  delay: 0.1
+  loss_prob: 0.0
+  msg_rate: null
+
+leader:
+  profile: sine
+  t_start: 5.0
+  amplitude: 1.0
+  freq_hz: 0.1
+
+sim:
+  dt: 0.01
+  t_final: 60.0
+  seed: 1

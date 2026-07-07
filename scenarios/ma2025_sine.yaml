@@ -1,0 +1,46 @@
+# Ma, Pagilla & Darbha 2025 (IEEE T-ITS 26(1)) — Section IV, stable case A.
+# tau0 = 0.5 s, d = r + length = 5 m, N = 12 followers, rho = 5, ka = 0.5,
+# h_lb = 0.9375 s -> hw = 0.95 s, (kp, kv) = (0.009, 0.63) from the feasible
+# region. Leader: one full 0.5 m/s^2 sine cycle at 0.1 rad/s starting t = 10 s
+# (their eq. (46)); duration 20*pi s. v0 is not stated in the paper (the error
+# dynamics are speed-independent); 20 m/s is our choice.
+name: ma2025_sine
+description: >
+  Base-paper reproduction scenario (stable case A): CTHP platoon of 12
+  followers under 16-bit multiplicative V2V acceleration noise (rho = 5).
+
+platoon:
+  n_followers: 12
+  v0: 20.0
+
+vehicle:
+  tau: 0.5
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.009
+  kv: 0.63
+  ka: 0.5
+  h: 0.95
+  r: 1.0        # r + length = d = 5 m of the paper
+
+network:
+  delay: 0.0
+  loss_prob: 0.0
+  msg_rate: null
+  noise_rho: 5.0
+  noise_rate: 100.0
+
+leader:
+  profile: sine
+  t_start: 10.0
+  amplitude: 0.5
+  freq_hz: 0.015915494   # omega = 0.1 rad/s
+  duration: 62.83185     # 20*pi s = exactly one cycle
+
+sim:
+  dt: 0.01
+  t_final: 200.0
+  seed: 1

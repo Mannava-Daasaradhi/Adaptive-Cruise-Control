@@ -1,0 +1,30 @@
+# Case A with the V2V channel noise disabled — isolates the deterministic
+# propagation (string-stability verdict) from noise-realization scatter.
+/**:
+  ros__parameters:
+    # physics (shared)
+    sim_rate_hz: 100.0
+    beacon_rate_hz: 25.0
+    v0: 20.0
+    tau: 0.5
+    length: 4.0
+    u_min: -8.0
+    u_max: 3.0
+    # controller (CTHP, case A)
+    kp: 0.009
+    kd: 0.7
+    kv: 0.63
+    ka: 0.5
+    h: 0.95
+    r: 1.0            # r + length = d = 5 m of the paper
+    # leader maneuver: one 0.5 m/s^2 sine cycle at 0.1 rad/s (eq. (46))
+    profile: sine
+    t_start: 10.0
+    amplitude: 0.5
+    freq_hz: 0.015915494
+    duration: 62.83185
+    # V2V channel impairments — noiseless
+    delay_s: 0.0
+    loss_prob: 0.0
+    noise_rho: 0.0
+    seed: 1

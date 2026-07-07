@@ -1,0 +1,39 @@
+# Hard-braking scenario: the classic string-stability stress test.
+# Leader brakes at -4 m/s^2 for 2 s (20 -> 12 m/s), then holds speed.
+name: leader_brake
+description: >
+  Leader performs an emergency-style braking pulse. Under ACC the spacing
+  error grows down the platoon (string instability); under CACC with V2V
+  feedforward it attenuates despite the communication delay.
+
+platoon:
+  n_followers: 5
+  v0: 20.0            # initial cruise speed [m/s]
+
+vehicle:
+  tau: 0.1            # actuator lag [s] (Ploeg et al. 2014)
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.2             # Ploeg et al. 2014 gains
+  kd: 0.7
+  h: 0.7              # time headway [s] — string-stable for CACC, not for ACC
+  r: 2.5              # standstill distance [m]
+
+network:
+  delay: 0.1          # V2V latency theta [s] (~100 ms, 802.11p ballpark)
+  loss_prob: 0.0
+  msg_rate: null      # null = continuous (deterministic) link
+
+leader:
+  profile: brake
+  t_start: 5.0
+  duration: 2.0
+  decel: -4.0
+
+sim:
+  dt: 0.01
+  t_final: 40.0
+  seed: 1

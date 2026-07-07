@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Generated outputs (reproducible from code; force-add figures you want to keep)
+results/*
+!results/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# LaTeX build artifacts
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.log
+report/*.out
+report/*.synctex.gz
+report/*.fdb_latexmk
+report/*.fls
+
+# OS / editor noise
+Thumbs.db
+.DS_Store

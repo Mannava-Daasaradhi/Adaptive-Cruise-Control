@@ -1,0 +1,63 @@
+# QoS-adaptive CACC scenario (D-016): the platoon drives through a V2V
+# interference zone (rho 10 -> 3 -> 10) while each follower estimates its
+# own channel and adapts its time headway. Base-paper case-A gains; two
+# sine maneuvers (one in the good channel, one inside the zone) plus a
+# small probing dither that keeps the channel estimators fed.
+name: qos_adaptive
+description: >
+  Time-varying channel quality with online rho estimation and
+  string-stability-preserving headway adaptation (fixed case-A gains).
+
+platoon:
+  n_followers: 8
+  v0: 20.0
+
+vehicle:
+  tau: 0.5
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.009
+  kv: 0.63
+  ka: 0.5
+  h: 0.95        # start at the case-A design (right for rho >= 5)
+  r: 1.0
+
+network:
+  delay: 0.0
+  loss_prob: 0.0
+  msg_rate: null
+  noise_rho: 10.0
+  noise_rate: 100.0
+  # interference zone: burst 1 (t 15-78) is fully in the good channel,
+  # burst 2 (t 100-163) fully inside the zone
+  rho_schedule: [[0.0, 10.0], [80.0, 3.0], [175.0, 10.0]]
+
+adaptation:
+  enabled: true
+  est_rate: 25.0
+  window: 256
+  max_age_s: 20.0
+  a_min: 0.03
+  rho_safety: 1.15
+  margin: 0.08
+  rate: 0.05
+  h_max: 2.5
+  predictor: false
+
+leader:
+  profile: bursts
+  # [t_start, duration, amplitude, freq_hz]: one full 0.1 rad/s cycle in
+  # the good channel; inside the zone, excite near the fixed-good design's
+  # worst frequency there (omega* ~ 0.40 rad/s at rho = 3, high noise end)
+  bursts:
+    - [15.0, 62.83185, 0.4, 0.015915494]
+    - [100.0, 62.5, 0.4, 0.064]
+  probe_amplitude: 0.08  # persistent excitation for the estimators
+
+sim:
+  dt: 0.01
+  t_final: 240.0
+  seed: 1

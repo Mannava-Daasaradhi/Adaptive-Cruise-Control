@@ -14,7 +14,7 @@ delay term in this DDE and keeps the integrator an explicit fixed-step RK4.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -22,7 +22,8 @@ import numpy as np
 import yaml
 
 from cacc.controllers import ControllerParams, make_controller
-from cacc.estimation import AdaptConfig, ChannelEstimator, HeadwayAdapter
+from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
+                             HeadwayAdapter)
 from cacc.network import V2VLink
 from cacc.vehicle import N_STATES, VehicleParams
 
@@ -68,6 +69,7 @@ class SimResult:
     config: PlatoonConfig
     h: np.ndarray | None = None  # (S, n) per-follower headway (adaptive runs)
     rho_hat: np.ndarray | None = None  # (S, n) channel estimates (NaN = none)
+    gains: np.ndarray | None = None  # (S, n, 2) live (kp, kv) when re-tuning
 
 
 @dataclass
@@ -137,6 +139,15 @@ class PlatoonSim:
             self.adapters = [first] + [
                 HeadwayAdapter(c.ka, c.kp, c.kv, config.vehicle.tau, ad,
                                h0=c.h, theta=config.delay, table=first._table)
+                for _ in range(n - 1)
+            ]
+        self.schedulers: list[GainScheduler] | None = None
+        if ad.enabled and ad.adapt_gains:
+            sch0 = GainScheduler(c.ka, c.kp, c.kv, config.vehicle.tau, ad,
+                                 theta=config.delay)
+            self.schedulers = [sch0] + [
+                GainScheduler(c.ka, c.kp, c.kv, config.vehicle.tau, ad,
+                              theta=config.delay, table=sch0._table)
                 for _ in range(n - 1)
             ]
         if self.ctrls[0].uses_v2v and not self.links[0].passthrough:
@@ -225,6 +236,11 @@ class PlatoonSim:
         adapting = self.adapters is not None
         h_arr = np.tile(self.h_i, (S, 1)) if adapting else None
         rho_arr = np.full((S, n), np.nan) if adapting else None
+        retuning = self.schedulers is not None
+        gains_arr = None
+        if retuning:
+            gains_arr = np.empty((S, n, 2))
+            gains_arr[:] = (cfg.control.kp, cfg.control.kv)
         est_every = max(1, round(1.0 / (cfg.adapt.est_rate * dt))) if adapting else 0
         lag = round(self._theta_hat / dt)
 
@@ -262,12 +278,24 @@ class PlatoonSim:
                 for i in range(n):
                     est, adp = self.estimators[i], self.adapters[i]
                     est.add_sample(t, self.links[i].receive(t), acc[k - lag, i])
-                    self.h_i[i] = adp.update(est_dt, est.rho_hat(t))
+                    rho = est.rho_hat(t)
+                    h_req = None
+                    if retuning and rho is not None:
+                        # joint gain + headway adaptation (D-017): slew
+                        # (kp, kv) toward the re-tuned feasible design and
+                        # target the headway required at those gains
+                        kp_i, kv_i, h_req = self.schedulers[i].update(
+                            est_dt, adp.rho_safe_of(rho))
+                        self.ctrls[i] = make_controller(
+                            "cthp", replace(cfg.control, kp=kp_i, kv=kv_i))
+                    self.h_i[i] = adp.update(est_dt, rho, h_required=h_req)
             if adapting:
                 h_arr[k] = self.h_i
                 rho_arr[k] = [
                     (e.rho_hat() or np.nan) for e in self.estimators
                 ]
+                if retuning:
+                    gains_arr[k] = [(s.kp, s.kv) for s in self.schedulers]
             if k == steps:
                 break
             # classic RK4 step
@@ -279,7 +307,7 @@ class PlatoonSim:
         peak = np.max(np.abs(err), axis=0)
         log.info("sim done: peak |e_i| per follower = %s m", np.array2string(peak, precision=3))
         return SimResult(t_arr, pos, vel, acc, err, u_arr, self.kind, cfg,
-                         h=h_arr, rho_hat=rho_arr)
+                         h=h_arr, rho_hat=rho_arr, gains=gains_arr)
 
 
 # ------------------------------------------------------------ scenario I/O

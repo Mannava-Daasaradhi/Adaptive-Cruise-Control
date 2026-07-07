@@ -20,7 +20,8 @@ from cacc.analysis import (
     min_stable_headway,
 )
 from cacc.controllers import ACC, CACC, CTHP, ControllerParams, make_controller
-from cacc.estimation import AdaptConfig, ChannelEstimator, HeadwayAdapter
+from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
+                             HeadwayAdapter)
 from cacc.logging_config import setup_logging
 from cacc.network import MA2025_GAMMAS, V2VLink
 from cacc.platoon import (
@@ -40,6 +41,7 @@ __all__ = [
     "CTHP",
     "ChannelEstimator",
     "ControllerParams",
+    "GainScheduler",
     "HeadwayAdapter",
     "MA2025_GAMMAS",
     "PlatoonConfig",

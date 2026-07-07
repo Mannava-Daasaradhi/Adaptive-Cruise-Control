@@ -157,3 +157,42 @@ def test_predicted_receive_tracks_delayed_ramp():
     true = 0.5 * t
     assert abs(true - plain) == pytest.approx(0.1, abs=1e-3)  # 0.5 * 0.2
     assert abs(true - pred) < 0.02
+
+
+# ------------------------------------------------------- gain re-tuning
+def test_gain_scheduler_reproduces_case_a_at_rho10():
+    """The 90%-of-ceiling rule recovers the paper's own case-A kv at the
+    design channel quality — evidence it is the implicit design recipe."""
+    from cacc import GainScheduler
+    sch = GainScheduler(ka=0.5, kp0=0.009, kv0=0.63, tau0=TAU0,
+                        cfg=AdaptConfig(enabled=True, adapt_gains=True))
+    kv, kp, _ = sch.targets(10.0)
+    assert kv == pytest.approx(0.628, abs=0.005)
+    assert kp == pytest.approx(0.009, abs=0.0005)
+
+
+def test_gain_scheduler_breaks_the_wall_at_rho2():
+    """Re-tuned gains make rho = 2 feasible with a modest headway, where
+    the fixed case-A gains require > 5 s (09_QoS_Adaptive_CACC.md)."""
+    from cacc import GainScheduler
+    sch = GainScheduler(ka=0.5, kp0=0.009, kv0=0.63, tau0=TAU0,
+                        cfg=AdaptConfig(enabled=True, adapt_gains=True))
+    _, _, h_req = sch.targets(2.0)
+    assert h_req < 2.0
+
+
+def test_joint_adaptation_stabilizes_deep_zone():
+    """In-force configuration in a rho = 2 zone must be string stable
+    (worst case over the noise interval) with joint gain + h adaptation."""
+    from cacc import hinf_norm
+    cfg = _adaptive_cfg(
+        adapt=AdaptConfig(enabled=True, adapt_gains=True),
+        rho_schedule=((0.0, 10.0), (40.0, 2.0)), t_final=120.0)
+    res = PlatoonSim(cfg, "cthp", _probe_leader).run()
+    k = int(115 / cfg.dt)
+    kp_f, kv_f = res.gains[k, 0]
+    h_f = float(res.h[k, 0])
+    assert kv_f < 0.45  # gains actually re-tuned away from case-A
+    hinf = max(hinf_norm("cthp", h_f, kp=kp_f, tau=TAU0, kv=kv_f,
+                         ka_eff=e * 0.5) for e in (0.5, 1.5))
+    assert hinf <= 1.0 + 1e-4

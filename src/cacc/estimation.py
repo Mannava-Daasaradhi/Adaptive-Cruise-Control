@@ -54,6 +54,9 @@ class AdaptConfig:
     h_max: float = 2.5  # [s] adaptation ceiling
     predictor: bool = False  # timestamp-based feedforward lead (D-016)
     pred_base: float = 0.4  # [s] predictor slope baseline
+    adapt_gains: bool = False  # online (kp, kv) re-tuning (D-017)
+    gain_rate: float = 0.05  # [1/s] max relative gain slew rate
+    kv_frac: float = 0.9  # kv target as a fraction of the eq.-28a ceiling
 
 
 class ChannelEstimator:
@@ -174,13 +177,104 @@ class HeadwayAdapter:
         return float((1 - fr) * (1 - ft) * t[i, j] + fr * (1 - ft) * t[i + 1, j]
                      + (1 - fr) * ft * t[i, j + 1] + fr * ft * t[i + 1, j + 1])
 
-    def update(self, dt: float, rho_hat: float | None) -> float:
-        """Advance h(t) one estimator period toward the current target."""
+    def update(self, dt: float, rho_hat: float | None,
+               h_required: float | None = None) -> float:
+        """Advance h(t) one estimator period toward the current target.
+
+        ``h_required`` overrides the internal fixed-gain lookup (used when a
+        :class:`GainScheduler` supplies the requirement at re-tuned gains).
+        """
         c = self.cfg
         if rho_hat is None:  # channel not yet observable: hold
             return self.h
         rho_safe = max(1.05, rho_hat / c.rho_safety)
-        target = min(c.h_max, c.margin + self.h_required(rho_safe))
+        if h_required is None:
+            h_required = self.h_required(rho_safe)
+        target = min(c.h_max, c.margin + h_required)
         step = np.clip(target - self.h, -c.rate * dt, c.rate * dt)
         self.h = float(self.h + step)
         return self.h
+
+    @property
+    def rho_safe_of(self):
+        """Expose the safety mapping for callers pairing a scheduler."""
+        return lambda rho_hat: max(1.05, rho_hat / self.cfg.rho_safety)
+
+
+class GainScheduler:
+    """Online (kp, kv) re-tuning for very noisy channels (D-017).
+
+    The h-only adapter hits a wall: the eq.-28a ceiling
+    gamma <= (1 - (1 + 1/rho)^2 ka^2) / (2 tau0) is h-independent (gamma =
+    kv + h kp only *grows* with h), so once the fixed kv exceeds it — for
+    case-A gains below rho ~ 3 — no headway helps much (h_req explodes,
+    infeasible below rho* ~ 1.8). The scheduler re-tunes:
+
+        kv(rho) = kv_frac * (1 - (1 + 1/rho)^2 ka^2) / (2 tau0)
+        kp(rho) = kp0 * kv(rho) / kv0           (keeps the kp/kv ratio)
+
+    i.e. kv rides at ``kv_frac`` (default 90 %) of the ceiling — a rule
+    that *reproduces the paper's own case-A choice at rho = 10*
+    (kv(10) = 0.628 vs their 0.63), which is the evidence this is the
+    design recipe the paper applied implicitly. h_req at the re-tuned
+    gains is bisected per rho (worst case over both noise-interval ends)
+    and tabulated once. Gain changes are rate-limited (relative slew
+    ``gain_rate`` per second) exactly like the headway, preserving the
+    quasi-static string-stability argument.
+    """
+
+    RHO_GRID = HeadwayAdapter.RHO_GRID
+
+    def __init__(self, ka: float, kp0: float, kv0: float, tau0: float,
+                 cfg: AdaptConfig, theta: float = 0.0,
+                 table: np.ndarray | None = None):
+        self.ka, self.kp0, self.kv0, self.tau0 = ka, kp0, kv0, tau0
+        self.cfg = cfg
+        self.theta = float(theta)
+        self.kp, self.kv = float(kp0), float(kv0)  # current (slewed) gains
+        self._table = table  # rows: (kv_t, kp_t, h_req) per RHO_GRID entry
+        if self._table is None:
+            self._table = self._build_table()
+
+    def _ceiling(self, rho: float) -> float:
+        return (1.0 - (1.0 + 1.0 / rho) ** 2 * self.ka**2) / (2.0 * self.tau0)
+
+    def _build_table(self) -> np.ndarray:
+        c = self.cfg
+        tab = np.empty((self.RHO_GRID.size, 3))
+        for i, rho in enumerate(self.RHO_GRID):
+            kv_t = c.kv_frac * self._ceiling(rho)
+            kp_t = self.kp0 * kv_t / self.kv0
+            h_req = 0.0
+            for end in (1.0 - 1.0 / rho, 1.0 + 1.0 / rho):
+                try:
+                    h_req = max(h_req, min_stable_headway(
+                        "cthp", theta=self.theta, kp=kp_t, tau=self.tau0,
+                        kv=kv_t, ka_eff=end * self.ka,
+                        pred_theta_hat=(self.theta if c.predictor else 0.0),
+                        pred_base=max(c.pred_base, 1e-3)))
+                except ValueError:
+                    h_req = np.inf
+            tab[i] = (kv_t, kp_t, min(h_req, 10.0))
+        log.info("gain-scheduler table built over %d rho points",
+                 self.RHO_GRID.size)
+        return tab
+
+    def targets(self, rho: float) -> tuple[float, float, float]:
+        """(kv_target, kp_target, h_required) at ``rho`` (interpolated)."""
+        rho_c = float(np.clip(rho, self.RHO_GRID[0], self.RHO_GRID[-1]))
+        i = int(np.searchsorted(self.RHO_GRID, rho_c) - 1)
+        i = max(0, min(i, self.RHO_GRID.size - 2))
+        f = (rho_c - self.RHO_GRID[i]) / (self.RHO_GRID[i + 1] - self.RHO_GRID[i])
+        row = (1 - f) * self._table[i] + f * self._table[i + 1]
+        return float(row[0]), float(row[1]), float(row[2])
+
+    def update(self, dt: float, rho_safe: float) -> tuple[float, float, float]:
+        """Slew the live gains toward the targets; returns (kp, kv, h_req)."""
+        kv_t, kp_t, h_req = self.targets(rho_safe)
+        lim = self.cfg.gain_rate * dt
+        self.kv = float(self.kv + np.clip(kv_t - self.kv,
+                                          -lim * self.kv0, lim * self.kv0))
+        self.kp = float(self.kp + np.clip(kp_t - self.kp,
+                                          -lim * self.kp0, lim * self.kp0))
+        return self.kp, self.kv, h_req

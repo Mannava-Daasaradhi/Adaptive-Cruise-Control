@@ -227,38 +227,131 @@ def fig3_delay_experiment(sc, outdir: Path) -> dict:
         "profile": "bursts", "bursts": [[15.0, 97.0, 0.4, 0.07235]],
         "probe_amplitude": 0.0})
     runs = {}
-    for pred in (False, True):
-        adapt = dataclasses.replace(base.adapt, enabled=False, predictor=pred)
-        cfg = dataclasses.replace(
-            base, control=ctrl, adapt=adapt, delay=0.15, noise_rho=5.0,
-            rho_schedule=None, t_final=150.0)
-        runs["predictor" if pred else "uncompensated"] = \
-            PlatoonSim(cfg, "cthp", leader).run()
+    for noisy in (False, True):
+        for pred in (False, True):
+            adapt = dataclasses.replace(base.adapt, enabled=False,
+                                        predictor=pred)
+            cfg = dataclasses.replace(
+                base, control=ctrl, adapt=adapt, delay=0.15,
+                noise_rho=(5.0 if noisy else None),
+                rho_schedule=None, t_final=150.0)
+            name = (("noisy" if noisy else "noiseless") + ", "
+                    + ("predictor" if pred else "uncompensated"))
+            runs[name] = PlatoonSim(cfg, "cthp", leader).run()
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
-    for ax, (name, res) in zip(axes, runs.items()):
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7.5), sharey="row",
+                             sharex=True)
+    for ax, (name, res) in zip(axes.flat, runs.items()):
         n = res.err.shape[1]
         cmap = plt.cm.viridis(np.linspace(0, 0.9, n))
         for i in range(n):
             ax.plot(res.t, -res.err[:, i], color=cmap[i], lw=0.8)
         r = l2_per_phase(res, 15.0, 145.0)
-        hinf = hinf_worst(0.95, 5.0, theta=0.15, pred=(name == "predictor"))
+        rho_th = 5.0 if name.startswith("noisy") else 1e9
+        hinf = hinf_worst(0.95, rho_th, theta=0.15,
+                          pred=name.endswith("predictor"))
         ax.set_title(f"{name}: max per-hop L2 = {r.max():.3f}, "
-                     rf"$\|\tilde H\|_\infty$ = {hinf:.4f}")
-        ax.set_xlabel("t [s]")
+                     rf"$\|\tilde H\|_\infty$ = {hinf:.4f}", fontsize=10)
         ax.grid(alpha=0.3)
-    axes[0].set_ylabel(r"$\delta_i$ [m]")
-    fig.suptitle(r"$\theta$ = 0.15 s, $\rho$ = 5, h = 0.95 s, leader at "
+    for ax in axes[1]:
+        ax.set_xlabel("t [s]")
+    for ax in axes[:, 0]:
+        ax.set_ylabel(r"$\delta_i$ [m]")
+    fig.suptitle(r"$\theta$ = 0.15 s, h = 0.95 s, leader at "
                  r"$\omega^*\!=0.45$ rad/s — timestamp predictor restores "
                  "string stability")
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(outdir / "fig3_delay_predictor.png", dpi=150)
     plt.close(fig)
     return {name: {
         "max_l2_ratio": round(float(l2_per_phase(r, 15.0, 145.0).max()), 4),
-        "hinf_worst": round(hinf_worst(0.95, 5.0, 0.15,
-                                       pred=(name == "predictor")), 5)}
+        "hinf_worst": round(hinf_worst(
+            0.95, 5.0 if name.startswith("noisy") else 1e9, 0.15,
+            pred=name.endswith("predictor")), 5)}
         for name, r in runs.items()}
+
+
+def fig4_gain_retuning(sc, outdir: Path) -> dict:
+    """Deep interference zone (rho 10 -> 2 -> 10): h-only adaptation hits
+    the fixed-gain wall (unstable even at h_max); joint gain + headway
+    re-tuning (D-017) restores the margin. The middle panel shows the
+    ||H~||_inf of the configuration actually in force over time."""
+    base = sc.config
+    deep = dataclasses.replace(
+        base, rho_schedule=((0.0, 10.0), (80.0, 2.0), (175.0, 10.0)))
+    runs = {}
+    for gains_on in (False, True):
+        adapt = dataclasses.replace(deep.adapt, enabled=True,
+                                    adapt_gains=gains_on)
+        cfg = dataclasses.replace(deep, adapt=adapt)
+        name = "joint gains+h" if gains_on else "h-only"
+        log.info("--- deep-zone variant: %s", name)
+        runs[name] = PlatoonSim(cfg, "cthp", sc.leader).run()
+
+    def hinf_in_force(res, t_probe, rho_true):
+        k = int(np.searchsorted(res.t, t_probe))
+        h = float(res.h[k].mean())
+        kp, kv = ((float(res.gains[k, :, 0].mean()),
+                   float(res.gains[k, :, 1].mean()))
+                  if res.gains is not None else (KP, KV))
+        return max(hinf_norm("cthp", h, kp=kp, tau=TAU0, kv=kv,
+                             ka_eff=end * KA)
+                   for end in (1 - 1 / rho_true, 1 + 1 / rho_true))
+
+    probes = np.arange(4.0, deep.t_final - 2.0, 4.0)
+    rho_of = lambda tt: 2.0 if 80.0 <= tt < 175.0 else 10.0  # noqa: E731
+
+    fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
+    colors = {"h-only": "#c23b3b", "joint gains+h": "#2e7d32"}
+    ax = axes[0]
+    for name, res in runs.items():
+        ax.plot(res.t, res.h[:, 0], color=colors[name], lw=1.3,
+                label=f"{name}: h(t)")
+        if res.gains is not None:
+            ax.plot(res.t, res.gains[:, 0, 1], color=colors[name], lw=1.1,
+                    ls="--", label=f"{name}: kv(t)")
+    ax.axhline(0.63, color="0.5", ls=":", lw=1, label="case-A kv")
+    ax.set_ylabel("h [s] / kv")
+    ax.set_title("headway and re-tuned gain (veh 1)")
+    ax.legend(fontsize=8, ncol=2)
+    ax.grid(alpha=0.3)
+
+    ax = axes[1]
+    curves = {}
+    for name, res in runs.items():
+        vals = [hinf_in_force(res, tp, rho_of(tp)) for tp in probes]
+        curves[name] = vals
+        ax.plot(probes, vals, "o-", ms=3, color=colors[name], label=name)
+    ax.axhline(1.0, color="k", ls=":", lw=1)
+    ax.set_ylabel(r"$\|\tilde H\|_\infty$ in force")
+    ax.set_title("live string-stability margin (worst noise end at true rho)")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+
+    ax = axes[2]
+    for name, res in runs.items():
+        ax.plot(res.t, -res.err[:, -1], color=colors[name], lw=0.9, label=name)
+    ax.set_ylabel(r"$\delta_{last}$ [m]")
+    ax.set_xlabel("t [s]")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    for a in axes:
+        for t0 in (80.0, 175.0):
+            a.axvline(t0, color="0.6", ls=":", lw=1)
+    fig.suptitle("deep zone rho 10 -> 2 -> 10: the fixed-gain wall and the "
+                 "gain-re-tuning fix (D-017)")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "fig4_gain_retuning.png", dpi=150)
+    plt.close(fig)
+
+    zone_probes = [tp for tp in probes if 110.0 <= tp <= 170.0]
+    return {name: {
+        "zone_hinf_in_force_max": round(float(max(
+            hinf_in_force(res, tp, 2.0) for tp in zone_probes)), 5),
+        "zone_h_settled": round(float(res.h[int(160 / deep.dt), 0]), 3),
+        "zone_kv_settled": (round(float(res.gains[int(160 / deep.dt), 0, 1]), 3)
+                            if res.gains is not None else 0.63)}
+        for name, res in runs.items()}
 
 
 def main() -> None:
@@ -281,6 +374,7 @@ def main() -> None:
         "theory": fig1_theory(outdir),
         "zone_experiment": fig2_zone_experiment(sc, outdir, args.quick),
         "delay_experiment": fig3_delay_experiment(sc, outdir),
+        "gain_retuning": fig4_gain_retuning(sc, outdir),
     }
     (outdir / "metrics.json").write_text(
         json.dumps(metrics, indent=2), encoding="utf-8")

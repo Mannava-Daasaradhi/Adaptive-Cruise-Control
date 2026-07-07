@@ -28,10 +28,20 @@ Communication: Noise, Delay, and Packet Loss**
 - **Anchor (IEEE Transactions):** Ma, Pagilla & Darbha, minimum time headway for CAV platoons
   under noisy V2V communication, *IEEE Trans. Intelligent Transportation Systems*, vol. 26,
   no. 1, Jan. 2025 (see `02_IEEE_Base_Paper.md`). Classic foundation: Ploeg et al. 2014.
-- **Novelty:** the base paper handles **noise**; we extend the same CTHP + feedforward framework
-  to **communication delay and packet loss** (and their combinations), comparing ACC and CACC
-  and reporting the **smallest string-stable time gap** (→ road-capacity gain) and a fuel/energy
-  estimate — clean, reproducible benchmark.
+- **Novelty (QoS-aware CACC, see `09_QoS_Adaptive_CACC.md` / D-016):** the base paper assumes the
+  channel noise level ρ is *known and constant*, gains re-tuned per ρ, and zero latency. We close
+  all three deployment gaps in one pipeline: (1) **online channel estimation** — each follower
+  estimates ρ̂ of its own link from beacon-vs-radar residuals (the bounded noise support makes a
+  windowed quantile invertible and conservative); (2) **timestamp-based feedforward prediction** —
+  removes the V2V latency penalty (required headway stays at its zero-delay value for delays up to
+  0.3 s, vs 7× blow-up uncompensated); (3) **string-stability-preserving headway adaptation** —
+  h(t) slews toward the *fixed-gain* requirement h_req(ρ̂, θ̂) with a rate limit, restoring the
+  stability margin inside interference zones while recovering ~25 % lane capacity in good channel
+  conditions vs a worst-case fixed design. Supporting studies: delay & packet loss at fixed gains
+  (delay is the binding constraint), the fixed-gain feasibility wall ρ* ≈ 1.8, and the
+  noise × delay interaction result. All of it validated in a distributed ROS 2 backend
+  cross-checked against the monolithic core — simulation rigorous enough to stand in for a
+  hardware testbed.
 
 ## 4. System architecture
 ```

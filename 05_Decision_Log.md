@@ -21,7 +21,12 @@ This file is the index; new decisions get the next `D-###` and a line here.
 | [D-013](docs/decisions/D-013-startup-anchor-and-radar-extrapolation.md) | Startup: radar extrapolation by stamp age + 2 s anchor hold (±2 m → ±2 mm) | real-time | 2026-07-06 |
 | [D-014](docs/decisions/D-014-wall-clock-integration-substep.md) | Wall-clock-measured dt, substepped RK4, matched 5 s horizons — WSL's periodic 1.4 s freezes neutralized | real-time | 2026-07-06 |
 | [D-015](docs/decisions/D-015-visualization-rviz2-and-mp4.md) | Car visualization: rviz2 live 3D (platoon-frame camera) + MP4/GIF renderer | demo | 2026-07-07 |
+| [D-016](docs/decisions/D-016-qos-adaptive-cacc.md) | Novel extension: QoS-aware CACC — online ρ̂ estimation, timestamp feedforward predictor, fixed-gain headway adaptation; ρ* wall, predictor flatline, noise×delay interaction | research | 2026-07-07 |
+| [D-017](docs/decisions/D-017-online-gain-retuning.md) | Online gain re-tuning (90 %-of-ceiling rule) breaks the fixed-gain wall — ρ=2 zone stabilized (in-force ‖H̃‖∞ 1.019 → 0.99999) | research | 2026-07-07 |
+| [D-018](docs/decisions/D-018-certification-harness.md) | Monte-Carlo certification harness: scenario×seed matrix → self-contained HTML PASS/FAIL report (first full run CERTIFIED) | product | 2026-07-07 |
 
-Docs are numbered serially (`01_Proposal` … `08_ROS2_Architecture`); the
+Docs are numbered serially (`01_Proposal` … `10_Handoff_Plan`); the
 cross-validation results the decisions refer to are in
-`07_Base_Paper_Reproduction_Results.md` §5 and `08_ROS2_Architecture.md`.
+`07_Base_Paper_Reproduction_Results.md` §5 and `08_ROS2_Architecture.md`;
+the novel extension is `09_QoS_Adaptive_CACC.md`; the execution plan for
+everything remaining is `10_Handoff_Plan.md`.

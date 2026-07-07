@@ -17,12 +17,16 @@ shorter, safer, more fuel-efficient platoons than human/ACC driving — even wit
 
 ## Deliverables
 `01_Proposal.md` · `02_IEEE_Base_Paper.md` · `03_OATD_Thesis.md` · `04_Industry_Resume_Solutions.md` ·
-`05_Decision_Log.md` · `06_Simulation_Design.md` · `07_Base_Paper_Reproduction_Results.md` · `08_ROS2_Architecture.md`
+`05_Decision_Log.md` · `06_Simulation_Design.md` · `07_Base_Paper_Reproduction_Results.md` ·
+`08_ROS2_Architecture.md` · `09_QoS_Adaptive_CACC.md` · `10_Handoff_Plan.md`
 
-**Code:** Python core (`src/cacc`, 41 unit tests) + ROS 2 Jazzy distributed sim (`ros2_ws/`) —
+**Code:** Python core (`src/cacc`, 52 unit tests) + ROS 2 Jazzy distributed sim (`ros2_ws/`) —
 base-paper (Ma 2025, T-ITS) reproduction in `scripts/reproduce_base_paper.py`, outputs in `results/`.
+**Novel extension (D-016):** QoS-aware CACC — online channel estimation, timestamp feedforward
+prediction, string-stability-preserving headway adaptation (`scripts/qos_adaptive_study.py`).
 **Car simulation:** live 3D in rviz2 (`scripts/ros2_view_demo.sh`) and MP4 highway animation
 (`scripts/render_platoon_video.py`). **Decisions:** `05_Decision_Log.md` → `docs/decisions/D-###`.
+**Continuing the project:** start from `10_Handoff_Plan.md`.
 
 ## Headline result
 > *"A leader speed perturbation is attenuated (not amplified) down a 5–10 vehicle platoon under

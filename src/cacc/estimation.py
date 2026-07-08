@@ -57,6 +57,8 @@ class AdaptConfig:
     adapt_gains: bool = False  # online (kp, kv) re-tuning (D-017)
     gain_rate: float = 0.05  # [1/s] max relative gain slew rate
     kv_frac: float = 0.9  # kv target as a fraction of the eq.-28a ceiling
+    rho_lpf_tau: float = 0.0  # [s] asymmetric rho_hat smoothing (D-019); 0 = off
+    stagger_s: float = 0.0  # [s] per-follower h-recovery serialization (D-019)
 
 
 class ChannelEstimator:
@@ -65,7 +67,9 @@ class ChannelEstimator:
     def __init__(self, cfg: AdaptConfig):
         self.cfg = cfg
         self._dev = deque(maxlen=cfg.window)  # (t, |w - 1|) samples
-        self._rho = None  # last estimate (None until enough excitation)
+        self._rho = None  # last raw estimate (None until enough excitation)
+        self._filt = None  # asymmetric-LPF state (D-019)
+        self._filt_t = None  # time of the last filter advance
 
     @property
     def n_samples(self) -> int:
@@ -100,12 +104,41 @@ class ChannelEstimator:
         if t is not None:
             while self._dev and t - self._dev[0][0] > self.cfg.max_age_s:
                 self._dev.popleft()
-        if len(self._dev) < 25:
-            return self._rho
-        d = float(np.quantile(np.asarray([d for _, d in self._dev]), 0.99))
-        if d > 1e-6:
-            self._rho = float(np.clip(1.0 / d, self.cfg.rho_min, self.cfg.rho_max))
-        return self._rho
+        if len(self._dev) >= 25:
+            d = float(np.quantile(np.asarray([d for _, d in self._dev]), 0.99))
+            if d > 1e-6:
+                self._rho = float(np.clip(1.0 / d, self.cfg.rho_min,
+                                          self.cfg.rho_max))
+        return self._smooth(t)
+
+    def _smooth(self, t: float | None) -> float | None:
+        """Asymmetric low-pass of the raw estimate (D-019, off by default).
+
+        Estimate DROPS (channel worsening) pass through instantly — the
+        safety direction must never wait on a filter. Estimate RISES
+        (recovery, including the jump when zone-era samples expire) are
+        first-order-filtered with time constant ``rho_lpf_tau``, so the
+        filtered value rides the lower envelope of the estimator jitter:
+        strictly conservative, and it removes the h(t) chatter that the
+        steep part of the h_req(rho) map otherwise amplifies. The state
+        advances only on timed reads (``t`` given); passive reads
+        (recording) return the last filtered value.
+        """
+        raw = self._rho
+        if self.cfg.rho_lpf_tau <= 0.0 or raw is None:
+            return raw
+        if self._filt is None:
+            self._filt, self._filt_t = raw, t
+            return raw
+        if t is None:
+            return self._filt
+        dt = max(0.0, t - (self._filt_t if self._filt_t is not None else t))
+        self._filt_t = t
+        if raw < self._filt:
+            self._filt = raw  # fast toward safety
+        else:
+            self._filt += dt / (self.cfg.rho_lpf_tau + dt) * (raw - self._filt)
+        return self._filt
 
 
 class HeadwayAdapter:
@@ -134,6 +167,8 @@ class HeadwayAdapter:
         self.cfg = cfg
         self.h = float(h0)
         self.theta = float(theta)
+        self.stagger_delay = 0.0  # [s] this follower's recovery slot (D-019)
+        self._shrink_wait = 0.0  # time a material shrink demand has stood
         self._table = table  # share one lookup across a platoon's adapters
         if self._table is None:
             self._table = self._build_table()
@@ -191,6 +226,19 @@ class HeadwayAdapter:
         if h_required is None:
             h_required = self.h_required(rho_safe)
         target = min(c.h_max, c.margin + h_required)
+        # front-first staggered recovery (D-019): a material headway
+        # DECREASE waits out this follower's serialization slot so the
+        # platoon's gap-closing ramps do not superpose into one long wave;
+        # increases (the safety direction) are never gated. The wait clock
+        # measures the CURRENT standing episode only — any lapse of the
+        # shrink demand resets it, otherwise plateau jitter would pre-earn
+        # the slot long before the real recovery front arrives
+        if target < self.h - 0.02:
+            self._shrink_wait += dt
+            if self._shrink_wait < self.stagger_delay:
+                target = self.h
+        else:
+            self._shrink_wait = 0.0
         step = np.clip(target - self.h, -c.rate * dt, c.rate * dt)
         self.h = float(self.h + step)
         return self.h

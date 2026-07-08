@@ -10,6 +10,11 @@ fig2 — the interference-zone experiment: three platoons {fixed-good,
        and out of the zone; rho-hat tracking; h(t); spacing errors.
 fig3 — delayed-channel experiment: fixed h = 0.95 s at theta = 0.15 s with
        and without the feedforward predictor.
+fig4 — deep zone (rho 10 -> 2 -> 10): the fixed-gain wall and the online
+       gain re-tuning fix (D-017), with the live in-force ||H~||_inf.
+fig5 — adaptation smoothing & staggered recovery (D-019): asymmetric
+       rho-hat filtering + front-first serialized h ramps vs the plain
+       D-016 adaptive platoon in the same interference zone.
 metrics.json — per-phase L2 amplification, headway/throughput accounting,
        estimator tracking errors, predictor gains.
 
@@ -354,6 +359,105 @@ def fig4_gain_retuning(sc, outdir: Path) -> dict:
         for name, res in runs.items()}
 
 
+def fig5_smoothing_stagger(sc, outdir: Path) -> dict:
+    """Adaptation smoothing & staggered recovery (D-019) vs plain D-016.
+
+    Same interference zone as fig2 (rho 10 -> 3 -> 10). The D-019 arm adds
+    (i) the asymmetric rho-hat low-pass (drops instant, rises filtered) and
+    (ii) front-first serialization of the h-recovery ramps. Reported:
+    plateau chatter (detrended RMS) and drift, exit-transition per-hop L2,
+    recovery-start serialization, mean headway (the capacity price), and
+    the in-force ||H~||_inf late in the zone (safety must be unaffected)."""
+    LPF_TAU, STAGGER = 4.0, 2.0
+    runs = {}
+    for d019 in (False, True):
+        adapt = dataclasses.replace(
+            sc.config.adapt, enabled=True,
+            rho_lpf_tau=(LPF_TAU if d019 else 0.0),
+            stagger_s=(STAGGER if d019 else 0.0))
+        cfg = dataclasses.replace(
+            sc.config, control=dataclasses.replace(sc.config.control, h=0.95),
+            adapt=adapt)
+        name = "adaptive + smoothing/stagger" if d019 else "adaptive (plain)"
+        log.info("--- fig5 variant: %s", name)
+        runs[name] = PlatoonSim(cfg, "cthp", sc.leader).run()
+
+    def plateau_stats(res, lo=125.0, hi=170.0):
+        m = (res.t >= lo) & (res.t <= hi)
+        h1 = res.h[m][::100]  # 1 s samples, all followers: (W, n)
+        trend = np.apply_along_axis(
+            lambda v: np.convolve(v, np.ones(5) / 5, "valid"), 0, h1)
+        resid = h1[2:-2] - trend
+        return (float(np.sqrt((resid ** 2).mean(axis=0)).max()),
+                float((h1.max(axis=0) - h1.min(axis=0)).max()))
+
+    def arrivals(res, t_from=175.0, tol=0.02):
+        """Per-follower time of arrival at the post-zone headway.
+
+        NOTE per-hop L2 ratios are meaningless across a *serialized*
+        transition (each hop's window energy is dominated by its own
+        commanded ramp at a different time — the ratio measures timing
+        offsets, not amplification; D-010 caveat squared), so the wave
+        metrics here are the peak tail excursion and the arrival spread.
+        """
+        k0 = int(np.searchsorted(res.t, t_from))
+        h_final = res.h[-1]
+        out = []
+        for i in range(res.h.shape[1]):
+            k = int(np.argmax(np.abs(res.h[k0:, i] - h_final[i]) < tol))
+            out.append(round(float(t_from + res.t[k]), 2))
+        return out
+
+    out: dict = {"config": {"rho_lpf_tau": LPF_TAU, "stagger_s": STAGGER}}
+    for name, res in runs.items():
+        chatter, drift = plateau_stats(res)
+        k170 = int(np.searchsorted(res.t, 170.0))
+        m_exit = (res.t >= 175.0) & (res.t <= 230.0)
+        arr = arrivals(res)
+        out[name] = {
+            "plateau_chatter_rms_s": round(chatter, 4),
+            "plateau_drift_s": round(drift, 4),
+            "exit_peak_tail_m": round(
+                float(np.abs(res.err[m_exit, -1]).max()), 3),
+            "exit_arrival_spread_s": round(max(arr) - min(arr), 2),
+            "arrivals_s": arr,
+            "mean_headway_s": round(float(res.h.mean()), 4),
+            "zone_hinf_in_force": round(
+                hinf_worst(float(res.h[k170].min()), 3.0), 5),
+        }
+
+    fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
+    for ax, (name, res) in zip(axes[:2], runs.items()):
+        n = res.h.shape[1]
+        cmap = plt.cm.viridis(np.linspace(0, 0.9, n))
+        for i in range(n):
+            ax.plot(res.t, res.h[:, i], color=cmap[i], lw=0.9,
+                    label=f"veh {i + 1}" if i in (0, n - 1) else None)
+        ax.set_ylabel("h [s]")
+        st = out[name]
+        ax.set_title(f"{name}: plateau chatter {st['plateau_chatter_rms_s']}"
+                     f" s RMS, exit peak tail {st['exit_peak_tail_m']} m",
+                     fontsize=10)
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.3)
+    ax = axes[2]
+    for name, res, col in zip(runs, runs.values(), ("#c23b3b", "#2e7d32")):
+        ax.plot(res.t, -res.err[:, -1], color=col, lw=0.9, label=name)
+    ax.set_ylabel(r"$\delta_{last}$ [m]")
+    ax.set_xlabel("t [s]")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    for a in axes:
+        for t0, _ in sc.config.rho_schedule[1:]:
+            a.axvline(t0, color="0.6", ls=":", lw=1)
+    fig.suptitle("adaptation smoothing & front-first staggered recovery "
+                 "(D-019) — same zone as fig2")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "fig5_smoothing_stagger.png", dpi=150)
+    plt.close(fig)
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true",
@@ -375,6 +479,7 @@ def main() -> None:
         "zone_experiment": fig2_zone_experiment(sc, outdir, args.quick),
         "delay_experiment": fig3_delay_experiment(sc, outdir),
         "gain_retuning": fig4_gain_retuning(sc, outdir),
+        "smoothing_stagger": fig5_smoothing_stagger(sc, outdir),
     }
     (outdir / "metrics.json").write_text(
         json.dumps(metrics, indent=2), encoding="utf-8")

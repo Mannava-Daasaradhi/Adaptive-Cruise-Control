@@ -196,3 +196,92 @@ def test_joint_adaptation_stabilizes_deep_zone():
     hinf = max(hinf_norm("cthp", h_f, kp=kp_f, tau=TAU0, kv=kv_f,
                          ka_eff=e * 0.5) for e in (0.5, 1.5))
     assert hinf <= 1.0 + 1e-4
+
+
+# ------------------------------------------- smoothing & stagger (D-019)
+def test_estimator_smoothing_fast_down_slow_up():
+    """Asymmetric rho-hat filter: channel worsening passes through in one
+    read (safety), the post-expiry recovery jump is low-passed (comfort)."""
+    mk = lambda tau: ChannelEstimator(  # noqa: E731
+        AdaptConfig(enabled=True, max_age_s=10.0, rho_lpf_tau=tau))
+    raw, smo = mk(0.0), mk(8.0)
+
+    def feed(t, dev):
+        for est in (raw, smo):
+            est.add_sample(t, 1.0 + dev, 1.0)
+            est.rho_hat(t)  # advance filters at the sampling cadence
+
+    for k in range(200):  # good era, rho = 10:  t in [0, 8)
+        feed(k * 0.04, 0.099 * (-1) ** k)
+    assert raw.rho_hat(8.0) == pytest.approx(1 / 0.099, rel=0.05)
+    for k in range(50):  # interference era, rho ~ 2:  t in [8, 10)
+        feed(8.0 + k * 0.04, 0.49 * (-1) ** k)
+    r_zone, s_zone = raw.rho_hat(10.0), smo.rho_hat(10.0)
+    assert r_zone < 3.0
+    assert s_zone == pytest.approx(r_zone, abs=1e-9)  # drop NOT filtered
+    for k in range(275):  # recovery era:  t in [10, 21); era-2 expires ~20
+        feed(10.0 + k * 0.04, 0.099 * (-1) ** k)
+    r_up, s_up = raw.rho_hat(21.0), smo.rho_hat(21.0)
+    assert r_up > 8.0  # raw estimate has already jumped back
+    assert s_up < 0.6 * r_up  # filtered rise is gradual...
+    for k in range(1000):  # ...but converges:  t in [21, 61)
+        feed(21.0 + k * 0.04, 0.099 * (-1) ** k)
+    assert smo.rho_hat(61.0) > 0.8 * raw.rho_hat(61.0)
+
+
+def test_adapter_stagger_gates_recovery_only():
+    """The serialization slot delays headway DECREASES by stagger_delay;
+    increases (the safety direction) always slew immediately."""
+    cfg = AdaptConfig(enabled=True, rate=0.05, margin=0.08, stagger_s=5.0)
+    front = HeadwayAdapter(tau0=TAU0, cfg=cfg, h0=0.95, **CASE_A)
+    rear = HeadwayAdapter(tau0=TAU0, cfg=cfg, h0=0.95, **CASE_A,
+                          table=front._table)
+    rear.stagger_delay = 5.0  # what the platoon assigns follower 2
+    for adp in (front, rear):
+        for _ in range(30):
+            adp.update(1.0, rho_hat=3.0)  # settle high inside the zone
+    assert rear.h == pytest.approx(front.h)
+    h_zone = rear.h
+    for _ in range(4):  # channel recovers
+        front.update(1.0, rho_hat=10.0)
+        rear.update(1.0, rho_hat=10.0)
+    assert front.h < h_zone - 0.15  # ungated follower shrinks at once
+    assert rear.h == pytest.approx(h_zone)  # gated follower holds its slot
+    for _ in range(4):
+        rear.update(1.0, rho_hat=10.0)
+    assert rear.h < h_zone - 0.1  # slot served: recovery proceeds
+    h_before = rear.h
+    rear.update(1.0, rho_hat=2.5)  # zone returns mid-recovery
+    assert rear.h == pytest.approx(h_before + 0.05, abs=1e-6)  # instant rise
+
+
+def test_platoon_staggered_recovery_serializes():
+    """Closed loop: with stagger_s set, follower i's h starts dropping
+    ~i * stagger_s after follower 1's (front-first), and strictly in order.
+
+    The zone is DEEP (rho = 2) and h_max sits well below the in-zone
+    requirement, so the plateau is pinned at the ceiling for any estimator
+    wander (at true rho = 2 even a +50 % over-estimate still demands more
+    than h_max): every follower leaves the zone from exactly h_max and the
+    level-crossing times compare start-time, not start-level. In shallower
+    zones the estimator's slow over-estimation drift creates a standing
+    shrink demand that blurs the recovery front — measured and documented
+    in D-019."""
+    cfg = _adaptive_cfg(
+        rho_schedule=((0.0, 2.0), (50.0, 10.0)), t_final=110.0,
+        adapt=AdaptConfig(enabled=True, stagger_s=8.0, rho_lpf_tau=4.0,
+                          h_max=2.0))
+    res = PlatoonSim(cfg, "cthp", _probe_leader).run()
+    k50 = int(50 / cfg.dt)
+    assert res.h[k50].min() > 1.9  # plateau pinned at the h_max ceiling
+    # recovery start ~ first descent through 1.7 s (plateau at 2.0, the
+    # post-zone requirement at ~0.96 — the crossing is unambiguous)
+    drop_t = [50.0 + float(res.t[np.argmax(res.h[k50:, i] < 1.7)])
+              for i in range(3)]
+    assert drop_t[0] < drop_t[1] < drop_t[2]  # front-first order
+    # separations are AT LEAST stagger_s apart (episode resets during the
+    # wobbly estimator transition can only extend a gate, never shorten it
+    # — the conservative direction; see D-019)
+    assert drop_t[1] - drop_t[0] > 5.0
+    assert drop_t[2] - drop_t[1] > 5.0
+    assert drop_t[2] - drop_t[0] < 35.0  # recovery still completes promptly

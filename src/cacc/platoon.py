@@ -141,6 +141,10 @@ class PlatoonSim:
                                h0=c.h, theta=config.delay, table=first._table)
                 for _ in range(n - 1)
             ]
+            # front-first staggered recovery (D-019): follower i may start
+            # shrinking h only i * stagger_s after its recovery demand
+            for i, adp in enumerate(self.adapters):
+                adp.stagger_delay = i * ad.stagger_s
         self.schedulers: list[GainScheduler] | None = None
         if ad.enabled and ad.adapt_gains:
             sch0 = GainScheduler(c.ka, c.kp, c.kv, config.vehicle.tau, ad,

@@ -23,7 +23,7 @@ from cacc.controllers import ACC, CACC, CTHP, ControllerParams, make_controller
 from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
 from cacc.logging_config import setup_logging
-from cacc.network import MA2025_GAMMAS, V2VLink
+from cacc.network import MA2025_GAMMAS, LinkAttack, V2VLink
 from cacc.qos_map import QoSMap
 from cacc.platoon import (
     PlatoonConfig,
@@ -33,6 +33,7 @@ from cacc.platoon import (
     load_scenario,
     make_leader_profile,
 )
+from cacc.trust import TrustConfig, TrustGate
 from cacc.vehicle import VehicleParams
 
 __all__ = [
@@ -44,12 +45,15 @@ __all__ = [
     "ControllerParams",
     "GainScheduler",
     "HeadwayAdapter",
+    "LinkAttack",
     "MA2025_GAMMAS",
     "PlatoonConfig",
     "PlatoonSim",
     "QoSMap",
     "Scenario",
     "SimResult",
+    "TrustConfig",
+    "TrustGate",
     "V2VLink",
     "VehicleParams",
     "cthp_gains_feasible",

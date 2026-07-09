@@ -24,8 +24,9 @@ import yaml
 from cacc.controllers import ControllerParams, make_controller
 from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
-from cacc.network import V2VLink
+from cacc.network import LinkAttack, V2VLink
 from cacc.qos_map import QoSMap
+from cacc.trust import TrustConfig, TrustGate
 from cacc.vehicle import N_STATES, VehicleParams
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ class PlatoonConfig:
     rho_schedule: tuple | None = None  # [(t, rho), ...] time-varying channel
     qos_map: tuple | None = None  # [(x0, x1, rho), ...] spatial channel map (D-021)
     adapt: AdaptConfig = AdaptConfig()  # QoS-adaptive outer loop (D-016)
+    attack: LinkAttack | None = None  # malicious V2V injection (D-022)
+    trust: TrustConfig = TrustConfig()  # physics-consistency gate (D-022)
     dt: float = 0.01
     t_final: float = 40.0
     seed: int = 1
@@ -72,6 +75,8 @@ class SimResult:
     h: np.ndarray | None = None  # (S, n) per-follower headway (adaptive runs)
     rho_hat: np.ndarray | None = None  # (S, n) channel estimates (NaN = none)
     gains: np.ndarray | None = None  # (S, n, 2) live (kp, kv) when re-tuning
+    trust: np.ndarray | None = None  # (S, n) trust weight g (gated runs, D-022)
+    ff_inj: np.ndarray | None = None  # (S, n) injected feedforward u_ff_eff - a_radar
 
 
 @dataclass
@@ -120,16 +125,26 @@ class PlatoonSim:
             base = config.noise_rho if config.noise_rho is not None else 50.0
             self.qos_map = QoSMap(config.qos_map, rho_base=base)
             link_scheds = self._link_rho_schedules(config, self.qos_map)
-        # link i (0-based) carries u_{i-1} -> follower i; leader feeds link 0
+        # link i (0-based) carries u_{i-1} -> follower i; leader feeds link 0.
+        # A malicious node (D-022) tampers only with its target link.
+        atk = config.attack
         self.links = [
             V2VLink(config.delay, config.loss_prob, config.msg_rate,
                     seed=config.seed + i,
                     noise_rho=(None if config.qos_map is not None
                                else config.noise_rho),
                     noise_gammas=config.noise_gammas, noise_rate=config.noise_rate,
-                    rho_schedule=link_scheds[i])
+                    rho_schedule=link_scheds[i],
+                    attack=(atk if atk is not None and atk.target_link == i
+                            else None))
             for i in range(n)
         ]
+        # physics-consistency trust gates (D-022): one per follower, guarding
+        # its incoming feedforward against V2V spoofing
+        self.gates = None
+        if config.trust.enabled:
+            self.gates = [TrustGate(config.trust, seed_offset=i)
+                          for i in range(n)]
         # --- QoS-adaptive outer loop (D-016): per-follower h, estimators ---
         c = config.control
         self.h_i = np.full(n, c.h)
@@ -176,6 +191,8 @@ class PlatoonSim:
         self._io_e = np.zeros(n)
         self._io_edot = np.zeros(n)
         self._io_u = np.zeros(n)
+        self._io_g = np.ones(n)  # trust weight g (D-022)
+        self._io_ffinj = np.zeros(n)  # injected feedforward u_ff_eff - a_radar
 
     # ---------------------------------------------------------------- state
     def initial_state(self) -> np.ndarray:
@@ -243,6 +260,13 @@ class PlatoonSim:
                                                   base=self.cfg.adapt.pred_base)
                 else:
                     u_ff = link.receive(t)
+                # physics-consistency gate (D-022): fuse the (possibly spoofed)
+                # V2V feedforward toward the independent radar estimate of the
+                # predecessor's acceleration; caps the injection at r0/2
+                if self.gates is not None:
+                    u_ff, g_i, _r_i, a_radar = self.gates[i].apply(t, u_ff, a_prev)
+                    self._io_g[i] = g_i
+                    self._io_ffinj[i] = u_ff - a_radar
             else:
                 u_ff = 0.0
             u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv))
@@ -278,6 +302,9 @@ class PlatoonSim:
         if retuning:
             gains_arr = np.empty((S, n, 2))
             gains_arr[:] = (cfg.control.kp, cfg.control.kv)
+        gating = self.gates is not None
+        trust_arr = np.ones((S, n)) if gating else None
+        ffinj_arr = np.zeros((S, n)) if gating else None
         est_every = max(1, round(1.0 / (cfg.adapt.est_rate * dt))) if adapting else 0
         lag = round(self._theta_hat / dt)
 
@@ -300,6 +327,9 @@ class PlatoonSim:
                 pos[k, i + 1], vel[k, i + 1], acc[k, i + 1] = x[b], x[b + 1], x[b + 2]
             err[k] = self._io_e
             u_arr[k] = self._io_u
+            if gating:
+                trust_arr[k] = self._io_g
+                ffinj_arr[k] = self._io_ffinj
             # broadcast over the links (leader feeds link 0); CACC shares the
             # commanded acceleration u, CTHP the realized acceleration a
             if self.ctrls[0].uses_v2v:
@@ -353,7 +383,8 @@ class PlatoonSim:
         peak = np.max(np.abs(err), axis=0)
         log.info("sim done: peak |e_i| per follower = %s m", np.array2string(peak, precision=3))
         return SimResult(t_arr, pos, vel, acc, err, u_arr, self.kind, cfg,
-                         h=h_arr, rho_hat=rho_arr, gains=gains_arr)
+                         h=h_arr, rho_hat=rho_arr, gains=gains_arr,
+                         trust=trust_arr, ff_inj=ffinj_arr)
 
 
 # ------------------------------------------------------------ scenario I/O
@@ -422,12 +453,18 @@ def load_scenario(path: str | Path) -> Scenario:
         net["rho_schedule"] = tuple(tuple(x) for x in net["rho_schedule"])
     if net.get("qos_map") is not None:
         net["qos_map"] = tuple(tuple(x) for x in net["qos_map"])
+    extra: dict = {}
+    if "attack" in raw:  # malicious V2V injection (D-022)
+        extra["attack"] = LinkAttack(**raw["attack"])
+    if "trust" in raw:  # physics-consistency gate (D-022)
+        extra["trust"] = TrustConfig(**raw["trust"])
     cfg = PlatoonConfig(
         vehicle=VehicleParams(**raw.get("vehicle", {})),
         control=ControllerParams(**raw.get("controller", {})),
         adapt=AdaptConfig(**raw.get("adaptation", {})),
         **raw.get("platoon", {}),
         **net,
+        **extra,
         **raw.get("sim", {}),
     )
     leader = make_leader_profile(raw["leader"])

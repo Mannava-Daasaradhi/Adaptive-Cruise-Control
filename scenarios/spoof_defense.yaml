@@ -1,0 +1,71 @@
+# Physics-consistency V2V gate (D-022): a malicious / impersonating node
+# injects a false acceleration into ONE follower's feedforward link. The raw
+# CTHP follower applies ka * (spoof) directly and collapses its gap (a
+# rear-end); the gate compares the V2V message against the follower's
+# independent radar estimate and, when they disagree, caps the injected
+# feedforward at r0 / 2 regardless of the spoof magnitude. Same case-A gains
+# and good channel as qos_adaptive.yaml so the honest-operation behaviour is
+# directly comparable (the gate must be inert when there is no attack).
+name: spoof_defense
+description: >
+  A spoofed V2V feedforward vs the physics-consistency trust gate: the gate
+  bounds the injected feedforward at r0/2 for any spoof, holding a safe gap
+  where the ungated design rear-ends its predecessor.
+
+platoon:
+  n_followers: 6
+  v0: 20.0
+
+vehicle:
+  tau: 0.5
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.009
+  kv: 0.63
+  ka: 0.5
+  h: 0.95
+  r: 1.0
+
+network:
+  delay: 0.1
+  loss_prob: 0.0
+  msg_rate: null
+  noise_rho: 10.0        # good channel (honest disagreement stays well below r0)
+  noise_rate: 100.0
+
+adaptation:
+  enabled: false         # isolate the gate: fixed headway, no QoS outer loop
+
+# malicious injection: a +5 m/s^2 phantom acceleration onto the link feeding
+# follower #3 (0-based link 2), t = 60..75 s, faded in over 2 s
+attack:
+  kind: bias
+  t0: 60.0
+  t1: 75.0
+  value: 5.0
+  ramp: 2.0
+  target_link: 2
+
+# physics-consistency gate (the study toggles enabled off for the ungated arm)
+trust:
+  enabled: true
+  r0: 3.0                # > worst honest V2V-vs-radar disagreement; cap = 1.5
+  radar_noise: 0.05      # independent radar accel estimate std [m/s^2]
+  noise_rate: 50.0
+  seed: 7
+
+leader:
+  profile: bursts
+  # a gentle 0.05 Hz maneuver plus a persistent dither so the honest V2V signal
+  # is non-trivial (the gate must not fight it) while the spoof is the event
+  bursts:
+    - [20.0, 30.0, 0.4, 0.05]
+  probe_amplitude: 0.05
+
+sim:
+  dt: 0.01
+  t_final: 140.0
+  seed: 1

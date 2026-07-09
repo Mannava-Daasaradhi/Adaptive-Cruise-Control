@@ -40,6 +40,7 @@ import numpy as np
 
 from cacc import (AdaptConfig, PlatoonSim, hinf_norm, load_scenario,
                   setup_logging)
+from cacc.plotstyle import use_house_style, vehicle_colors
 
 log = logging.getLogger("cacc.scripts.certify")
 
@@ -183,9 +184,9 @@ def snapshot_png(res) -> str:
     """Small errors-vs-time thumbnail, base64-embedded."""
     fig, ax = plt.subplots(figsize=(6.4, 2.6))
     n = res.err.shape[1]
-    cmap = plt.cm.viridis(np.linspace(0, 0.9, n))
+    cmap = vehicle_colors(n)
     for i in range(n):
-        ax.plot(res.t, -res.err[:, i], color=cmap[i], lw=0.7)
+        ax.plot(res.t, -res.err[:, i], color=cmap[i], lw=0.9)
     ax.set_xlabel("t [s]", fontsize=8)
     ax.set_ylabel(r"$\delta_i$ [m]", fontsize=8)
     ax.tick_params(labelsize=7)
@@ -197,40 +198,96 @@ def snapshot_png(res) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+CERT_CSS = """
+*{box-sizing:border-box}
+body{font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+  background:#f4f3ef;color:#1a1a19;margin:0;padding:2.4em 1em 4em;
+  line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:64em;margin:0 auto}
+.head{display:flex;flex-wrap:wrap;align-items:center;gap:1em 1.4em;
+  border-bottom:1px solid #e1e0d9;padding-bottom:1.3em;margin-bottom:1.6em}
+h1{font-size:1.5em;font-weight:700;margin:0;letter-spacing:-.01em}
+.sub{color:#6b6a64;font-size:.9em;margin:.35em 0 0}
+.pill{margin-left:auto;font-weight:700;font-size:.95em;letter-spacing:.04em;
+  padding:.5em 1.1em;border-radius:999px;display:inline-flex;align-items:center;
+  gap:.5em;white-space:nowrap}
+.pill.ok{background:#e4f5e4;color:#0a6b0a;border:1px solid #b6e3b6}
+.pill.no{background:#fdecec;color:#b32020;border:1px solid #f2b6b6}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:.8em;margin:0 0 2em}
+.tile{background:#fff;border:1px solid #e6e5de;border-radius:12px;padding:1em 1.1em}
+.tile .n{font-size:1.9em;font-weight:700;letter-spacing:-.02em}
+.tile .l{color:#6b6a64;font-size:.8em;margin-top:.15em}
+.card{background:#fff;border:1px solid #e6e5de;border-radius:14px;
+  padding:1.2em 1.3em 1.4em;margin:0 0 1.3em;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.card h2{font-size:1.05em;font-weight:650;margin:0 0 .15em}
+.card .desc{color:#6b6a64;font-size:.86em;margin:0 0 .9em}
+table{border-collapse:collapse;width:100%;font-size:.87em;margin:.2em 0 1em}
+th{text-align:left;color:#6b6a64;font-weight:600;font-size:.82em;
+  text-transform:uppercase;letter-spacing:.03em;padding:.4em .7em;
+  border-bottom:1px solid #e1e0d9}
+td{padding:.5em .7em;border-bottom:1px solid #f0efe9;vertical-align:top}
+td.v{font-variant-numeric:tabular-nums;font-weight:600}
+tr:last-child td{border-bottom:none}
+.tag{font-weight:700;font-size:.78em;letter-spacing:.03em;padding:.18em .6em;
+  border-radius:6px}
+.tag.pass{background:#e4f5e4;color:#0a6b0a}
+.tag.fail{background:#fdecec;color:#b32020}
+img{max-width:100%;border:1px solid #ecebe4;border-radius:8px;margin:.3em 0 0}
+@media (prefers-color-scheme:dark){
+  body{background:#131312;color:#f2f1ea}
+  .head{border-color:#2c2c2a}.sub,.tile .l,.card .desc,th{color:#a5a49b}
+  .tile,.card{background:#1c1c1a;border-color:#2c2c2a}
+  th{border-color:#2c2c2a}td{border-color:#242422}
+  .pill.ok{background:#12351a;color:#7bd47b;border-color:#255a2b}
+  .pill.no{background:#3a1717;color:#e88;border-color:#5a2525}
+  .tag.pass{background:#12351a;color:#7bd47b}.tag.fail{background:#3a1717;color:#e88}
+  img{border-color:#2c2c2a}}
+"""
+
+
 def render_html(results: dict, seeds: list[int], outdir: Path) -> Path:
-    rows_css = ("body{font-family:Segoe UI,Arial,sans-serif;background:#14161d;"
-                "color:#e8e8ee;margin:2em auto;max-width:70em;padding:0 1em}"
-                "h1{font-size:1.5em} h2{font-size:1.15em;margin-top:1.6em}"
-                "table{border-collapse:collapse;width:100%;margin:.6em 0}"
-                "td,th{border:1px solid #333a4d;padding:.35em .6em;"
-                "font-size:.9em;text-align:left}"
-                ".pass{color:#4caf50;font-weight:600}"
-                ".fail{color:#ef5350;font-weight:600}"
-                "img{max-width:100%;border:1px solid #333a4d;margin:.4em 0}"
-                ".meta{color:#9aa0b4;font-size:.85em}")
     total = sum(len(v["checks"]) for v in results.values())
     passed = sum(c["pass"] for v in results.values() for c in v["checks"])
-    verdict = ("CERTIFIED" if passed == total
-               else f"FAILED ({total - passed} check(s))")
-    parts = [f"<style>{rows_css}</style>",
+    ok = passed == total
+    verdict = "CERTIFIED" if ok else f"FAILED · {total - passed} check(s)"
+    parts = [f"<style>{CERT_CSS}</style>", "<div class='wrap'>",
+             "<div class='head'><div>",
              "<h1>CACC Virtual Validation — Certification Report</h1>",
-             f"<p class='meta'>generated {datetime.now():%Y-%m-%d %H:%M} · "
-             f"seeds {seeds} · cacc package v0.3 · 55-test suite</p>",
-             f"<h2>Overall: <span class="
-             f"'{'pass' if passed == total else 'fail'}'>{verdict}"
-             f"</span> — {passed}/{total} checks</h2>"]
+             f"<p class='sub'>generated {datetime.now():%Y-%m-%d %H:%M} · "
+             f"{len(seeds)} seeds {seeds} · Monte-Carlo suite · "
+             "cacc core · 58-test gate</p></div>",
+             f"<span class='pill {'ok' if ok else 'no'}'>"
+             f"{'✓' if ok else '✕'} {verdict}</span></div>",
+             "<div class='tiles'>",
+             f"<div class='tile'><div class='n'>{passed}/{total}</div>"
+             "<div class='l'>checks passed</div></div>",
+             f"<div class='tile'><div class='n'>{len(results)}</div>"
+             "<div class='l'>scenario suites</div></div>",
+             f"<div class='tile'><div class='n'>{len(seeds)}</div>"
+             "<div class='l'>seeds / suite</div></div>",
+             f"<div class='tile'><div class='n'>{'100%' if ok else ''}"
+             f"{'' if ok else f'{100*passed//total}%'}</div>"
+             "<div class='l'>acceptance rate</div></div>",
+             "</div>"]
     for name, v in results.items():
-        parts.append(f"<h2>{name}</h2><p class='meta'>{v['desc']}</p>")
+        title, _, desc_inline = name.partition(" — ")
+        parts.append("<div class='card'>")
+        parts.append(f"<h2>{title}</h2>"
+                     f"<p class='desc'>{desc_inline or v['desc']}</p>")
         parts.append("<table><tr><th>check</th><th>criterion</th>"
                      "<th>value</th><th>verdict</th></tr>")
         for c in v["checks"]:
             cls = "pass" if c["pass"] else "fail"
             parts.append(
                 f"<tr><td>{c['check']}</td><td>{c['criterion']}</td>"
-                f"<td>{c['value']}</td>"
-                f"<td class='{cls}'>{'PASS' if c['pass'] else 'FAIL'}</td></tr>")
+                f"<td class='v'>{c['value']}</td>"
+                f"<td><span class='tag {cls}'>"
+                f"{'PASS' if c['pass'] else 'FAIL'}</span></td></tr>")
         parts.append("</table>")
         parts.append(f"<img src='data:image/png;base64,{v['png']}'/>")
+        parts.append("</div>")
+    parts.append("</div>")
     out = outdir / "report.html"
     out.write_text("\n".join(parts), encoding="utf-8")
     return out
@@ -242,6 +299,7 @@ def main() -> None:
     parser.add_argument("--quick", action="store_true")
     args = parser.parse_args()
     setup_logging()
+    use_house_style()
     seeds = list(range(1, args.seeds + 1))
     sc = load_scenario("scenarios/qos_adaptive.yaml")
 

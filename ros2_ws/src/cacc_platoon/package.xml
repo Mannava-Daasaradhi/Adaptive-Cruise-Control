@@ -18,6 +18,13 @@
   <depend>python3-numpy</depend>
   <depend>python3-yaml</depend>
 
+  <!-- Gazebo (gz-sim Harmonic) 3-D view: world server, model spawner and the
+       transport/msgs Python bindings used by gz_bridge_node. Optional at
+       runtime (the core sim and rviz work without them). -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

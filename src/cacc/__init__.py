@@ -24,6 +24,7 @@ from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
 from cacc.logging_config import setup_logging
 from cacc.network import MA2025_GAMMAS, V2VLink
+from cacc.qos_map import QoSMap
 from cacc.platoon import (
     PlatoonConfig,
     PlatoonSim,
@@ -46,6 +47,7 @@ __all__ = [
     "MA2025_GAMMAS",
     "PlatoonConfig",
     "PlatoonSim",
+    "QoSMap",
     "Scenario",
     "SimResult",
     "V2VLink",

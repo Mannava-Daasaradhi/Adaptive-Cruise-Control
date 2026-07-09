@@ -15,6 +15,9 @@ setup(
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
         ("share/" + package_name + "/config",
          glob("config/*.yaml") + glob("config/*.rviz")),
+        ("share/" + package_name + "/worlds", glob("worlds/*.sdf")),
+        ("share/" + package_name + "/models/cacc_car",
+         glob("models/cacc_car/*")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -30,6 +33,7 @@ setup(
             "channel_node = cacc_platoon.channel_node:main",
             "recorder_node = cacc_platoon.recorder_node:main",
             "viz_node = cacc_platoon.viz_node:main",
+            "gz_bridge_node = cacc_platoon.gz_bridge_node:main",
         ],
     },
 )

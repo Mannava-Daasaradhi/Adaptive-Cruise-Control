@@ -51,6 +51,7 @@ from cacc import (
     setup_logging,
 )
 from cacc.metrics import amplification_ratios, l2_errors
+from cacc.plotstyle import C, use_house_style, vehicle_colors
 
 log = logging.getLogger("cacc.scripts.reproduce_base_paper")
 
@@ -107,10 +108,12 @@ def fig1_design_space(out: Path) -> None:
         if rho is not None:
             ka_s, h_s = cthp_optimal(rho, TAU0)
             ax.plot(ka_s, h_s, "k*", ms=9)
-    ax.plot(CASE_A["ka"], CASE_A["h"], "rs", ms=7,
+    ax.plot(CASE_A["ka"], CASE_A["h"], "s", color=C["fixed_good"], ms=8,
+            mec="white", mew=0.9, zorder=5,
             label=r"paper case A ($k_a{=}0.5$, $h_w{=}0.95$ s)")
     ka_star, _ = cthp_optimal(RHO, TAU0)
-    ax.plot(ka_star, CASE_C["h"], "b^", ms=8,
+    ax.plot(ka_star, CASE_C["h"], "^", color=C["adaptive"], ms=10,
+            mec="white", mew=0.9, zorder=5,
             label=rf"paper case C ($k_a^*{{=}}{ka_star:.3f}$, $h_w{{=}}0.88$ s)")
     ax.set_xlabel(r"acceleration feedforward gain  $k_a$")
     ax.set_ylabel(r"min robust string-stable headway  $h_{w,lb}$  [s]")
@@ -154,7 +157,7 @@ def fig2_frequency_response(out: Path) -> dict:
 
 def fig3_time_domain(out: Path, res_a, sim_a, res_b) -> None:
     n = res_a.config.n_followers
-    colors = plt.cm.viridis(np.linspace(0, 0.9, n))
+    colors = vehicle_colors(n)
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     for ax, res, case in ((axes[0, 0], res_a, CASE_A), (axes[0, 1], res_b, CASE_B)):
         delta = -res.err  # paper sign convention: delta_i = -e_i
@@ -201,7 +204,7 @@ def fig3_time_domain(out: Path, res_a, sim_a, res_b) -> None:
 
 def fig4_optimal_case(out: Path, res_c, res_a) -> None:
     n = res_c.config.n_followers
-    colors = plt.cm.viridis(np.linspace(0, 0.9, n))
+    colors = vehicle_colors(n)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
     ax = axes[0]
     for i in range(n):
@@ -287,6 +290,7 @@ def main() -> None:
                         help="smaller platoon / fewer sweeps (smoke test)")
     args = parser.parse_args()
     setup_logging()
+    use_house_style()
 
     n = 6 if args.quick else N_FOLLOWERS
     t_final = 80.0 if args.quick else T_FINAL

@@ -38,6 +38,7 @@ import numpy as np
 
 from cacc import (PlatoonSim, cthp_h_lb, hinf_norm, load_scenario,
                   make_leader_profile, min_stable_headway, setup_logging)
+from cacc.plotstyle import C, use_house_style, vehicle_colors, zone_span
 
 log = logging.getLogger("cacc.scripts.qos_adaptive_study")
 
@@ -145,43 +146,44 @@ def fig2_zone_experiment(sc, outdir: Path, quick: bool) -> dict:
             run_variant(sc, "fixed-worst", False, h_worst),
         "adaptive": run_variant(sc, "adaptive", True, 0.95),
     }
-    colors = {k: c for k, c in zip(variants, ("#c23b3b", "#8a7f28", "#2e7d32"))}
+    colors = {k: c for k, c in zip(
+        variants, (C["fixed_good"], C["fixed_worst"], C["adaptive"]))}
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
     ax = axes[0]
     res_a = variants["adaptive"]
-    ax.plot(res_a.t, res_a.rho_hat[:, 0], color="#2e7d32", lw=1.2,
-            label=r"$\hat\rho$ (veh 1)")
+    ax.plot(res_a.t, res_a.rho_hat[:, 0], color=C["adaptive"], lw=1.4,
+            label=r"estimated $\hat\rho$ (veh 1)")
     sched = list(sc.config.rho_schedule) + [(sc.config.t_final, None)]
     for (t0, r0), (t1, _) in zip(sched[:-1], sched[1:]):
-        ax.hlines(r0, t0, t1, color="k", ls="--", lw=1)
-    ax.set_ylabel(r"$\rho$")
-    ax.set_title("channel-quality tracking (dashed = true)")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
+        ax.hlines(r0, t0, t1, color=C["reference"], ls="--", lw=1.3,
+                  label="true $\\rho$" if t0 == sched[0][0] else None)
+    ax.set_ylabel(r"channel quality $\rho$")
+    ax.set_title("Online channel-quality estimation tracks the true schedule")
+    ax.legend(loc="center right")
 
     ax = axes[1]
-    ax.plot(res_a.t, res_a.h[:, 0], color="#2e7d32", lw=1.4, label="adaptive h(t)")
-    ax.axhline(0.95, color="#c23b3b", ls="--", lw=1.2, label="fixed-good")
-    ax.axhline(h_worst, color="#8a7f28", ls="--", lw=1.2, label="fixed-worst")
-    ax.set_ylabel("h [s]")
-    ax.set_title("time headway")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
+    ax.plot(res_a.t, res_a.h[:, 0], color=C["adaptive"], lw=1.9,
+            label="adaptive $h(t)$")
+    ax.axhline(0.95, color=C["fixed_good"], ls="--", lw=1.4, label="fixed-good")
+    ax.axhline(h_worst, color=C["fixed_worst"], ls="--", lw=1.4,
+               label="fixed-worst")
+    ax.set_ylabel("time headway $h$ [s]")
+    ax.set_title("Headway opens in the zone, then recovers — capacity only when safe")
+    ax.legend(loc="center right")
 
     ax = axes[2]
     for name, res in variants.items():
         last = res.err[:, -1]
-        ax.plot(res.t, -last, color=colors[name], lw=0.9, label=name)
-    ax.set_ylabel(rf"$\delta_{{{res_a.err.shape[1]}}}$ [m] (last follower)")
-    ax.set_xlabel("t [s]")
-    ax.set_title("last-follower spacing error")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-    for a in axes:
-        for t0, _ in sc.config.rho_schedule[1:]:
-            a.axvline(t0, color="0.6", ls=":", lw=1)
-    fig.suptitle("interference-zone experiment (rho 10 -> 3 -> 10, case-A gains)")
+        ax.plot(res.t, -last, color=colors[name], lw=1.3, label=name)
+    ax.set_ylabel(rf"last-follower error $\delta_{{{res_a.err.shape[1]}}}$ [m]")
+    ax.set_xlabel("time t [s]")
+    ax.set_title("Spacing error stays bounded across the degraded window")
+    ax.legend(loc="upper left")
+    z0, z1 = sc.config.rho_schedule[1][0], sc.config.rho_schedule[2][0]
+    for i, a in enumerate(axes):
+        zone_span(a, z0, z1, label="interference zone  (ρ = 3)", first=(i == 0))
+    fig.suptitle("Interference-zone experiment — ρ:  10 → 3 → 10   (case-A gains)")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(outdir / "fig2_zone_experiment.png", dpi=150)
     plt.close(fig)
@@ -248,9 +250,9 @@ def fig3_delay_experiment(sc, outdir: Path) -> dict:
                              sharex=True)
     for ax, (name, res) in zip(axes.flat, runs.items()):
         n = res.err.shape[1]
-        cmap = plt.cm.viridis(np.linspace(0, 0.9, n))
+        cmap = vehicle_colors(n)
         for i in range(n):
-            ax.plot(res.t, -res.err[:, i], color=cmap[i], lw=0.8)
+            ax.plot(res.t, -res.err[:, i], color=cmap[i], lw=1.0)
         r = l2_per_phase(res, 15.0, 145.0)
         rho_th = 5.0 if name.startswith("noisy") else 1e9
         hinf = hinf_worst(0.95, rho_th, theta=0.15,
@@ -307,7 +309,7 @@ def fig4_gain_retuning(sc, outdir: Path) -> dict:
     rho_of = lambda tt: 2.0 if 80.0 <= tt < 175.0 else 10.0  # noqa: E731
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
-    colors = {"h-only": "#c23b3b", "joint gains+h": "#2e7d32"}
+    colors = {"h-only": C["fail"], "joint gains+h": C["fix"]}
     ax = axes[0]
     for name, res in runs.items():
         ax.plot(res.t, res.h[:, 0], color=colors[name], lw=1.3,
@@ -340,11 +342,10 @@ def fig4_gain_retuning(sc, outdir: Path) -> dict:
     ax.set_xlabel("t [s]")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
-    for a in axes:
-        for t0 in (80.0, 175.0):
-            a.axvline(t0, color="0.6", ls=":", lw=1)
-    fig.suptitle("deep zone rho 10 -> 2 -> 10: the fixed-gain wall and the "
-                 "gain-re-tuning fix (D-017)")
+    for i, a in enumerate(axes):
+        zone_span(a, 80.0, 175.0, label="deep zone  (ρ = 2)", first=(i == 0))
+    fig.suptitle("Deep zone — ρ:  10 → 2 → 10:  the fixed-gain wall and the "
+                 "gain re-tuning fix (D-017)")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(outdir / "fig4_gain_retuning.png", dpi=150)
     plt.close(fig)
@@ -429,9 +430,9 @@ def fig5_smoothing_stagger(sc, outdir: Path) -> dict:
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
     for ax, (name, res) in zip(axes[:2], runs.items()):
         n = res.h.shape[1]
-        cmap = plt.cm.viridis(np.linspace(0, 0.9, n))
+        cmap = vehicle_colors(n)
         for i in range(n):
-            ax.plot(res.t, res.h[:, i], color=cmap[i], lw=0.9,
+            ax.plot(res.t, res.h[:, i], color=cmap[i], lw=1.1,
                     label=f"veh {i + 1}" if i in (0, n - 1) else None)
         ax.set_ylabel("h [s]")
         st = out[name]
@@ -441,17 +442,18 @@ def fig5_smoothing_stagger(sc, outdir: Path) -> dict:
         ax.legend(fontsize=8)
         ax.grid(alpha=0.3)
     ax = axes[2]
-    for name, res, col in zip(runs, runs.values(), ("#c23b3b", "#2e7d32")):
-        ax.plot(res.t, -res.err[:, -1], color=col, lw=0.9, label=name)
+    for name, res, col in zip(runs, runs.values(),
+                              (C["plain"], C["smooth"])):
+        ax.plot(res.t, -res.err[:, -1], color=col, lw=1.3, label=name)
     ax.set_ylabel(r"$\delta_{last}$ [m]")
-    ax.set_xlabel("t [s]")
+    ax.set_xlabel("time t [s]")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
-    for a in axes:
-        for t0, _ in sc.config.rho_schedule[1:]:
-            a.axvline(t0, color="0.6", ls=":", lw=1)
-    fig.suptitle("adaptation smoothing & front-first staggered recovery "
-                 "(D-019) — same zone as fig2")
+    z0, z1 = sc.config.rho_schedule[1][0], sc.config.rho_schedule[2][0]
+    for i, a in enumerate(axes):
+        zone_span(a, z0, z1, label="interference zone", first=(i == 0))
+    fig.suptitle("Adaptation smoothing & front-first staggered recovery "
+                 "(D-019) — same zone as fig 2")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(outdir / "fig5_smoothing_stagger.png", dpi=150)
     plt.close(fig)
@@ -464,6 +466,7 @@ def main() -> None:
                         help="3 followers, shorter horizon")
     args = parser.parse_args()
     setup_logging()
+    use_house_style()
 
     sc = load_scenario("scenarios/qos_adaptive.yaml")
     if args.quick:

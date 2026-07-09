@@ -24,8 +24,11 @@ shorter, safer, more fuel-efficient platoons than human/ACC driving — even wit
 base-paper (Ma 2025, T-ITS) reproduction in `scripts/reproduce_base_paper.py`, outputs in `results/`.
 **Novel extension (D-016):** QoS-aware CACC — online channel estimation, timestamp feedforward
 prediction, string-stability-preserving headway adaptation (`scripts/qos_adaptive_study.py`).
-**Car simulation:** live 3D in rviz2 (`scripts/ros2_view_demo.sh`) and MP4 highway animation
-(`scripts/render_platoon_video.py`). **Decisions:** `05_Decision_Log.md` → `docs/decisions/D-###`.
+**Car simulation:** live 3D in **Gazebo** (`scripts/ros2_gazebo_demo.sh`, D-020) and **rviz2**
+(`scripts/ros2_view_demo.sh`), MP4 highway animation (`scripts/render_platoon_video.py`), and a
+self-contained **interactive browser sim** (`demo/cacc_live_sim.html`) — pseudo-3D chase view,
+top-down spacing map, live δᵢ(t) telemetry, V2V noise trace and a QoS-adaptive toggle, all running
+the ported CTHP physics. **Decisions:** `05_Decision_Log.md` → `docs/decisions/D-###`.
 **Continuing the project:** start from `10_Handoff_Plan.md`.
 
 ## Headline result

@@ -1,0 +1,67 @@
+# Predictive QoS-map CACC scenario (D-021): the platoon drives through a
+# GEO-REFERENCED V2V interference patch (rho 10 -> 3) whose location is known
+# in advance from a shared channel-quality map. Each follower's channel is
+# driven by WHERE it is (the map), so it enters the patch later down the
+# string; the predictive adapter opens the headway from the map preview BEFORE
+# entry. Same case-A gains, zone depth and maneuver family as qos_adaptive.yaml
+# so the reactive (D-016) and predictive (D-021) arms are directly comparable.
+name: predictive_qos
+description: >
+  Spatial channel-quality map with a preview lookahead: the headway is
+  pre-positioned so the certified string-stability margin holds throughout the
+  degraded zone (vs the reactive adapter, which is transiently unstable at
+  entry).
+
+platoon:
+  n_followers: 6
+  v0: 20.0
+
+vehicle:
+  tau: 0.5
+  length: 4.0
+  u_min: -8.0
+  u_max: 3.0
+
+controller:
+  kp: 0.009
+  kv: 0.63
+  ka: 0.5
+  h: 0.95        # case-A design (right for the good channel, rho >= 5)
+  r: 1.0
+
+network:
+  delay: 0.0
+  loss_prob: 0.0
+  msg_rate: null
+  noise_rho: 10.0        # good-channel quality outside the patch (map base)
+  noise_rate: 100.0
+  # geo-referenced interference patch [x0, x1, rho] in metres: rho drops to 3
+  # between 1600 m and 4200 m along the road (the leader reaches 1600 m near
+  # t = 80 s at v0 = 20 m/s; followers enter progressively later)
+  qos_map: [[1600.0, 4200.0, 3.0]]
+
+adaptation:
+  enabled: true
+  est_rate: 25.0
+  window: 256
+  max_age_s: 20.0
+  a_min: 0.03
+  rho_safety: 1.15
+  margin: 0.08
+  rate: 0.05
+  h_max: 2.5
+  predictor: false
+  preview_s: 45.0        # map lookahead horizon (D-021); the study sets 0 for reactive
+
+leader:
+  profile: bursts
+  # one gentle 0.06 Hz maneuver INSIDE the zone (t ~ 95-155 s) to probe in-zone
+  # string stability, plus a persistent dither to keep the estimators fed
+  bursts:
+    - [95.0, 60.0, 0.30, 0.06]
+  probe_amplitude: 0.08
+
+sim:
+  dt: 0.01
+  t_final: 230.0
+  seed: 1

@@ -25,6 +25,7 @@ from cacc.controllers import ControllerParams, make_controller
 from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
 from cacc.network import V2VLink
+from cacc.qos_map import QoSMap
 from cacc.vehicle import N_STATES, VehicleParams
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class PlatoonConfig:
     noise_gammas: tuple[float, ...] | None = None  # None = paper's 16-bit channel
     noise_rate: float = 100.0  # noise-factor hold rate [Hz]
     rho_schedule: tuple | None = None  # [(t, rho), ...] time-varying channel
+    qos_map: tuple | None = None  # [(x0, x1, rho), ...] spatial channel map (D-021)
     adapt: AdaptConfig = AdaptConfig()  # QoS-adaptive outer loop (D-016)
     dt: float = 0.01
     t_final: float = 40.0
@@ -109,12 +111,23 @@ class PlatoonSim:
             raise ValueError("need at least one follower")
         self.ctrls = [make_controller(self.kind, config.control) for _ in range(n)]
         self.nc = self.ctrls[0].n_states
+        # spatial channel map (D-021): drive each link's rho from where that
+        # link physically is (follower i trails the leader), so a patch is
+        # entered later down the string; also exposes a position preview
+        self.qos_map = None
+        link_scheds = [config.rho_schedule] * n
+        if config.qos_map is not None:
+            base = config.noise_rho if config.noise_rho is not None else 50.0
+            self.qos_map = QoSMap(config.qos_map, rho_base=base)
+            link_scheds = self._link_rho_schedules(config, self.qos_map)
         # link i (0-based) carries u_{i-1} -> follower i; leader feeds link 0
         self.links = [
             V2VLink(config.delay, config.loss_prob, config.msg_rate,
-                    seed=config.seed + i, noise_rho=config.noise_rho,
+                    seed=config.seed + i,
+                    noise_rho=(None if config.qos_map is not None
+                               else config.noise_rho),
                     noise_gammas=config.noise_gammas, noise_rate=config.noise_rate,
-                    rho_schedule=config.rho_schedule)
+                    rho_schedule=link_scheds[i])
             for i in range(n)
         ]
         # --- QoS-adaptive outer loop (D-016): per-follower h, estimators ---
@@ -180,6 +193,26 @@ class PlatoonSim:
             x[b + 2] = 0.0  # a_i
             # controller states (CACC xi) start at 0 = steady-state input
         return x
+
+    def _link_rho_schedules(self, config: PlatoonConfig, qmap: QoSMap):
+        """Per-link rho step schedules from the spatial map (D-021).
+
+        Each link's channel is driven by the position of its follower along a
+        nominal (maneuver-integrated) trajectory: follower ``i`` trails the
+        leader by ``(i+1)`` standoff gaps, so it enters a patch that much
+        later. Small closed-loop spacing ripples don't change which (large)
+        patch a vehicle is in, so the nominal trajectory is exact enough.
+        """
+        n, dt = config.n_followers, config.dt
+        c, veh = config.control, config.vehicle
+        gap0 = c.r + c.h * config.v0 + veh.length
+        tg = np.arange(0.0, config.t_final + dt, dt)
+        a0 = np.array([self.leader_accel(float(t)) for t in tg])
+        v = config.v0 + np.concatenate(
+            [[0.0], np.cumsum(0.5 * (a0[1:] + a0[:-1]) * dt)])
+        x_lead = np.concatenate([[0.0], np.cumsum(0.5 * (v[1:] + v[:-1]) * dt)])
+        return [qmap.time_schedule(tg, x_lead - (i + 1) * gap0)
+                for i in range(n)]
 
     # ------------------------------------------------------------- dynamics
     def _deriv(self, t: float, x: np.ndarray) -> np.ndarray:
@@ -279,10 +312,18 @@ class PlatoonSim:
             # timestamp-aligned theta_hat in the past) and slew the headway
             if adapting and k % est_every == 0 and k >= lag:
                 est_dt = est_every * dt
+                preview_on = self.qos_map is not None and cfg.adapt.preview_s > 0
                 for i in range(n):
                     est, adp = self.estimators[i], self.adapters[i]
                     est.add_sample(t, self.links[i].receive(t), acc[k - lag, i])
                     rho = est.rho_hat(t)
+                    # predictive QoS-map lookahead (D-021): worst channel this
+                    # follower meets within preview_s s at its current speed
+                    rho_prev = None
+                    if preview_on:
+                        b = 2 + i * self.block
+                        rho_prev = self.qos_map.min_rho_ahead(
+                            x[b], x[b + 1], cfg.adapt.preview_s)
                     h_req = None
                     if retuning and rho is not None:
                         # joint gain + headway adaptation (D-017): slew
@@ -292,7 +333,8 @@ class PlatoonSim:
                             est_dt, adp.rho_safe_of(rho))
                         self.ctrls[i] = make_controller(
                             "cthp", replace(cfg.control, kp=kp_i, kv=kv_i))
-                    self.h_i[i] = adp.update(est_dt, rho, h_required=h_req)
+                    self.h_i[i] = adp.update(est_dt, rho, h_required=h_req,
+                                             rho_preview=rho_prev)
             if adapting:
                 h_arr[k] = self.h_i
                 rho_arr[k] = [
@@ -378,6 +420,8 @@ def load_scenario(path: str | Path) -> Scenario:
     net = dict(raw.get("network", {}))
     if net.get("rho_schedule") is not None:
         net["rho_schedule"] = tuple(tuple(x) for x in net["rho_schedule"])
+    if net.get("qos_map") is not None:
+        net["qos_map"] = tuple(tuple(x) for x in net["qos_map"])
     cfg = PlatoonConfig(
         vehicle=VehicleParams(**raw.get("vehicle", {})),
         control=ControllerParams(**raw.get("controller", {})),

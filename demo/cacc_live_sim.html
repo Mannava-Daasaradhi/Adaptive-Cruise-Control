@@ -1,0 +1,549 @@
+<meta charset="utf-8">
+<title>CACC Live Simulator — Cooperative Adaptive Cruise Control</title>
+<style>
+:root{
+  --bg:#080b11; --panel:#111823; --panel-2:#0d131c; --line:#1e2a3a;
+  --ink:#e9eef6; --ink-2:#93a3ba; --muted:#5c6c82;
+  --accent:#33c1e8; --accent-2:#3b82f6;
+  --leader:#ffcc33; --good:#34d399; --bad:#f65a63; --warn:#fbbf24;
+  --mono:"Cascadia Code","SF Mono","JetBrains Mono",ui-monospace,Consolas,monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+.app{background:radial-gradient(120% 80% at 50% -10%,#0e1622,#080b11 60%);
+  color:var(--ink);font-family:var(--sans);min-height:100vh;padding:14px;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+
+/* ---- top status bar ---- */
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:linear-gradient(180deg,#131c28,#0f151e);border:1px solid var(--line);
+  border-radius:14px;padding:12px 16px}
+.brand{display:flex;flex-direction:column;gap:1px;margin-right:auto}
+.brand h1{font-size:1.02rem;font-weight:750;letter-spacing:-.01em;margin:0}
+.brand .sub{font-family:var(--mono);font-size:.64rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--accent)}
+.verdict{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:.72rem;font-weight:700;padding:.42em .8em;
+  border-radius:999px;display:inline-flex;align-items:center;gap:.5em;white-space:nowrap;
+  border:1px solid transparent}
+.badge .k{width:.6em;height:.6em;border-radius:50%;display:inline-block}
+.badge.good{background:rgba(52,211,153,.12);color:var(--good);border-color:rgba(52,211,153,.3)}
+.badge.bad{background:rgba(246,90,99,.13);color:var(--bad);border-color:rgba(246,90,99,.35)}
+.badge.neutral{background:#0e1622;color:var(--ink-2);border-color:var(--line)}
+.btns{display:flex;gap:7px}
+button{font-family:var(--sans);font-size:.82rem;font-weight:600;color:var(--ink);
+  background:#16202e;border:1px solid var(--line);border-radius:9px;padding:.5em .9em;
+  cursor:pointer;transition:.12s}
+button:hover{background:#1c2a3b;border-color:#2c3e54}
+button.primary{background:var(--accent-2);border-color:var(--accent-2);color:#fff}
+button.primary:hover{background:#2f74e6}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- main grid ---- */
+.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;position:relative}
+.card .cap{position:absolute;top:9px;left:12px;z-index:3;font-family:var(--mono);
+  font-size:.63rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+  background:rgba(8,11,17,.55);padding:.25em .6em;border-radius:6px;backdrop-filter:blur(3px)}
+canvas{display:block;width:100%}
+.left{display:flex;flex-direction:column;gap:12px}
+.right{display:flex;flex-direction:column;gap:12px}
+
+/* ---- readout tiles ---- */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tile{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:.6em .7em}
+.tile .n{font-family:var(--mono);font-size:1.12rem;font-weight:700;line-height:1.1}
+.tile .n small{font-size:.62em;color:var(--muted);font-weight:600}
+.tile .l{font-size:.62rem;color:var(--ink-2);margin-top:2px;letter-spacing:.02em}
+
+/* ---- control deck ---- */
+.deck{background:linear-gradient(180deg,#111a26,#0d131c);border:1px solid var(--line);
+  border-radius:14px;padding:14px 16px}
+.deck-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(166px,1fr));gap:16px 20px;
+  align-items:end}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl label{font-size:.72rem;color:var(--ink-2);display:flex;justify-content:space-between;
+  align-items:baseline;gap:8px}
+.ctl label b{font-family:var(--mono);color:var(--ink);font-size:.82rem;font-weight:700}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:5px;
+  background:#1d2938;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:var(--accent);border:2px solid #0b1119;box-shadow:0 0 0 1px var(--accent)}
+input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--accent);
+  border:2px solid #0b1119}
+.toggle{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none;font-size:.8rem}
+.toggle .sw{width:40px;height:22px;border-radius:999px;background:#22303f;position:relative;
+  transition:.15s;flex:none;border:1px solid var(--line)}
+.toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:var(--ink-2);transition:.15s}
+.toggle.on .sw{background:rgba(52,211,153,.35);border-color:var(--good)}
+.toggle.on .sw::after{left:20px;background:var(--good)}
+.seg{display:inline-flex;width:fit-content;background:#0d131c;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:transparent;padding:.45em .66em;font-size:.76rem;color:var(--ink-2);white-space:nowrap;cursor:pointer}
+.seg button.sel{background:var(--accent-2);color:#fff}
+.hint{font-size:.66rem;color:var(--muted);margin-top:2px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.68rem;color:var(--ink-2);
+  padding:6px 12px 10px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:11px;height:3px;border-radius:2px;display:inline-block}
+.foot{font-size:.68rem;color:var(--muted);text-align:center;padding:4px 0 2px;line-height:1.5}
+.foot b{color:var(--ink-2)}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+<div class="app"><div class="wrap">
+
+  <div class="bar">
+    <div class="brand">
+      <h1>CACC Live Simulator</h1>
+      <span class="sub">Cooperative Adaptive Cruise Control · real-time physics</span>
+    </div>
+    <div class="verdict">
+      <span class="badge neutral" id="b-design"><span class="k"></span>—</span>
+      <span class="badge neutral" id="b-string"><span class="k"></span>—</span>
+    </div>
+    <div class="btns">
+      <button id="btn-play" class="primary">⏸ Pause</button>
+      <button id="btn-reset">↺ Reset</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="left">
+      <div class="card">
+        <span class="cap">chase view · pseudo-3D highway</span>
+        <canvas id="road" width="820" height="380"></canvas>
+      </div>
+      <div class="card">
+        <span class="cap">top-down map · platoon spacing</span>
+        <canvas id="map" width="820" height="150"></canvas>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-rho">5.0</div><div class="l">channel quality ρ</div></div>
+        <div class="tile"><div class="n" id="t-h">0.95<small> s</small></div><div class="l">time headway h</div></div>
+        <div class="tile"><div class="n" id="t-amp">1.00<small>×</small></div><div class="l">worst per-hop L2</div></div>
+        <div class="tile"><div class="n" id="t-gap">20.0<small> m</small></div><div class="l">min bumper gap</div></div>
+      </div>
+      <div class="card">
+        <span class="cap">live telemetry · spacing error δᵢ(t) per follower</span>
+        <canvas id="chartErr" width="520" height="210"></canvas>
+        <div class="legend" id="err-legend"></div>
+      </div>
+      <div class="card">
+        <span class="cap">V2V channel · communicated vs true acceleration (link 1→2)</span>
+        <canvas id="chartNoise" width="520" height="150"></canvas>
+        <div class="legend">
+          <span><i style="background:#8aa0bd"></i> true a₁(t)</span>
+          <span><i style="background:var(--warn)"></i> received w·a₁ (noisy)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="deck">
+    <div class="deck-row">
+      <div class="ctl">
+        <label>Channel quality ρ <b id="v-rho">5.0</b></label>
+        <input type="range" id="s-rho" min="2" max="15" step="0.5" value="5">
+        <span class="hint">low = noisy V2V · high = clean</span>
+      </div>
+      <div class="ctl">
+        <label>V2V delay θ <b id="v-delay">0.00 s</b></label>
+        <input type="range" id="s-delay" min="0" max="0.30" step="0.01" value="0">
+        <span class="hint">latency on the feedforward</span>
+      </div>
+      <div class="ctl">
+        <label>Packet loss <b id="v-loss">0 %</b></label>
+        <input type="range" id="s-loss" min="0" max="60" step="5" value="0">
+        <span class="hint">10 Hz beacons dropped</span>
+      </div>
+      <div class="ctl">
+        <label>Leader maneuver <b id="v-amp">0.6 m/s²</b></label>
+        <input type="range" id="s-amp" min="0" max="1.5" step="0.1" value="0.6">
+        <span class="hint">sinusoidal speed wave</span>
+      </div>
+      <div class="ctl">
+        <label>Followers <b id="v-n">6</b></label>
+        <input type="range" id="s-n" min="3" max="9" step="1" value="6">
+        <span class="hint">platoon length (rebuilds)</span>
+      </div>
+      <div class="ctl">
+        <label style="margin-bottom:2px">Adaptation</label>
+        <div class="toggle" id="tg-adapt"><span class="sw"></span><span>QoS-adaptive headway</span></div>
+        <span class="hint">opens the gap when ρ drops (D-016)</span>
+      </div>
+      <div class="ctl">
+        <label style="margin-bottom:2px">Speed</label>
+        <div class="seg" id="seg-speed">
+          <button data-v="0.5">0.5×</button><button data-v="1" class="sel">1×</button><button data-v="2">2×</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label style="margin-bottom:2px">Presets</label>
+        <div class="seg" id="seg-preset">
+          <button data-p="clean">Clean</button><button data-p="zone">Interference</button><button data-p="delay">Delay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Physics ported from the project core — CTHP law <b>u = k_p·e + k_v·Δv + k_a·w·a<sub>prev</sub></b>,
+    double-integrator vehicle with actuator lag τ₀, and the Ma-2025 16-bit multiplicative channel noise.
+    String-stability verdict is live per-hop L2 amplification. Case-A gains (k_p=0.009, k_v=0.63, k_a=0.5), v₀=20 m/s.
+  </div>
+</div></div>
+
+<script>
+"use strict";
+// ------------------------------------------- constants (project case-A) ---
+const KP=0.009, KV=0.63, KA=0.5, TAU=0.5, L=4.0, R=1.0, V0=20.0;
+const UMIN=-8, UMAX=3, DT=0.005, NOISE_HZ=100;
+const H_FIX=0.95;                                   // fixed-design headway
+// Ma-2025 16-bit channel-bit expectations (network.py MA2025_GAMMAS)
+const GAMMAS=[0.8055,0.5767,0.1829,0.2399,0.8865,0.0287,0.4899,0.1679,
+              0.9787,0.7127,0.5005,0.4711,0.0596,0.6820,0.0424,0.0714];
+const WEIGHTS=GAMMAS.map((_,j)=>Math.pow(2,-j));
+// fixed-gain required headway h_req(ρ) (from qos_adaptive metrics.json)
+const HREQ_RHO=[1.8,2.0,2.2,2.5,2.8,3.0,3.5,4.0,5.0,7.0,10.0,15.0,25.0];
+const HREQ_H  =[8.32,5.28,3.56,2.16,1.44,1.15,1.01,0.984,0.945,0.901,0.867,0.841,0.820];
+const clamp=(u,lo,hi)=>u<lo?lo:(u>hi?hi:u);
+function hReq(rho){                                 // interp required headway
+  if(rho<=HREQ_RHO[0]) return HREQ_H[0];
+  if(rho>=HREQ_RHO[HREQ_RHO.length-1]) return HREQ_H[HREQ_H.length-1];
+  for(let i=1;i<HREQ_RHO.length;i++) if(rho<=HREQ_RHO[i]){
+    const t=(rho-HREQ_RHO[i-1])/(HREQ_RHO[i]-HREQ_RHO[i-1]);
+    return HREQ_H[i-1]+t*(HREQ_H[i]-HREQ_H[i-1]); }
+  return HREQ_H[HREQ_H.length-1];
+}
+
+// ------------------------------------------------- V2V link per follower --
+class Link{
+  constructor(){ this.hist=[]; this.k=-1; this.U=1; this.held=0; this.nextBeacon=0; }
+  push(t,a){ this.hist.push([t,a]); if(this.hist.length>2000) this.hist.shift(); }
+  rawAt(tq){                                        // delayed value by interpolation
+    const H=this.hist; if(!H.length) return 0;
+    if(tq<=H[0][0]) return H[0][1];
+    if(tq>=H[H.length-1][0]) return H[H.length-1][1];
+    let lo=0,hi=H.length-1;                          // binary search
+    while(hi-lo>1){const m=(lo+hi)>>1; if(H[m][0]<tq) lo=m; else hi=m;}
+    const [t0,a0]=H[lo],[t1,a1]=H[hi]; const w=(tq-t0)/(t1-t0);
+    return a0+w*(a1-a0);
+  }
+  noise(t,rho){                                     // Ma-2025 multiplicative w(t)
+    const k=Math.floor(t*NOISE_HZ+1e-9);
+    if(k!==this.k){ this.k=k; let U=0;
+      for(let j=0;j<16;j++) if(Math.random()<GAMMAS[j]) U+=WEIGHTS[j];
+      this.U=U; }
+    return (1-1/rho)+this.U/rho;
+  }
+  deliver(t,delay,loss){                            // delayed + (optional) lossy raw
+    const raw=this.rawAt(t-delay);
+    if(loss<=0){ this.held=raw; return raw; }
+    while(t>=this.nextBeacon){ this.nextBeacon+=0.1;
+      if(Math.random()>=loss) this.held=this.rawAt(this.nextBeacon-0.1-delay); }
+    return this.held;
+  }
+}
+
+// ------------------------------------------------------- simulation state -
+const S={ t:0, N:6, p:[], v:[], a:[], links:[], h:H_FIX, rhoHat:5,
+  adapt:false, playing:true, speed:1,
+  ctl:{ rho:5, delay:0, loss:0, amp:0.6 },
+  err:[], noiseTrue:[], noiseRecv:[], tHist:[], amp:1, minGap:20, dispX:0 };
+const CHART_T=22;                                   // seconds shown on charts
+
+function build(){
+  const N=S.N; S.p=[]; S.v=[]; S.a=[]; S.links=[];
+  const gap=L+R+S.h*V0;
+  for(let i=0;i<=N;i++){ S.p.push(-i*gap); S.v.push(V0); S.a.push(0);
+    if(i>0) S.links.push(new Link()); }
+  S.t=0; S.rhoHat=S.ctl.rho; S.err=[]; S.noiseTrue=[]; S.noiseRecv=[]; S.tHist=[];
+  S.amp=1; S.minGap=gap-L; S.dispX=0;
+  for(const c of colFollow) c._e=[];               // per-follower error trace
+}
+function leaderAccel(t){ return S.ctl.amp*Math.sin(2*Math.PI*t/18); }
+
+// one physics substep (semi-implicit Euler)
+function step(dt){
+  const {rho,delay,loss}=S.ctl, N=S.N;
+  // adaptive headway target from estimated channel quality
+  S.rhoHat += (rho-S.rhoHat)*Math.min(1,dt/2.5);
+  const hTarget = S.adapt ? clamp(hReq(S.rhoHat)*1.02,0.9,2.1) : H_FIX;
+  S.h += clamp(hTarget-S.h,-0.15*dt,0.15*dt);
+  // leader (index 0)
+  const u0=clamp(leaderAccel(S.t),UMIN,UMAX);
+  S.a[0]+=(u0-S.a[0])/TAU*dt; S.v[0]+=S.a[0]*dt; S.p[0]+=S.v[0]*dt;
+  // followers
+  let minGap=1e9;
+  for(let i=1;i<=N;i++){
+    const lk=S.links[i-1];
+    lk.push(S.t,S.a[i-1]);
+    const d=S.p[i-1]-S.p[i]-L, ddes=R+S.h*S.v[i];
+    const e=d-ddes, dv=S.v[i-1]-S.v[i];
+    const uff=lk.noise(S.t,rho)*lk.deliver(S.t,delay,loss);
+    const u=clamp(KP*e+KV*dv+KA*uff,UMIN,UMAX);
+    S.a[i]+=(u-S.a[i])/TAU*dt; S.v[i]+=S.a[i]*dt; S.p[i]+=S.v[i]*dt;
+    if(d<minGap) minGap=d;
+    if(i===1){ S._trueA1=S.a[0]; S._recvA1=uff; }
+    colFollow[i-1]._eNow = -e;                       // δ = -e (paper sign)
+  }
+  S.minGap=minGap; S.t+=dt;
+}
+
+// ---------------------------------------------------------- colour setup -
+const COL=getComputedStyle(document.documentElement);
+const cAccent=COL.getPropertyValue('--accent').trim()||'#33c1e8';
+const cLeader=COL.getPropertyValue('--leader').trim()||'#ffcc33';
+const cGood=COL.getPropertyValue('--good').trim()||'#34d399';
+const cBad=COL.getPropertyValue('--bad').trim()||'#f65a63';
+const cWarn=COL.getPropertyValue('--warn').trim()||'#fbbf24';
+let colFollow=[];
+function followerColors(N){                          // cyan→violet ramp
+  colFollow=[]; for(let i=0;i<N;i++){ const t=i/Math.max(1,N-1);
+    const r=Math.round(51+t*120), g=Math.round(193-t*90), b=Math.round(232-t*20);
+    const o={hex:`rgb(${r},${g},${b})`, _e:[], _eNow:0}; colFollow.push(o); }
+}
+
+// --------------------------------------------------------------- metrics -
+let mAcc=0;
+function updateMetrics(dt){
+  mAcc+=dt; if(mAcc<0.2) return; mAcc=0;
+  // windowed RMS of each follower's error trace -> per-hop amplification
+  const rms=colFollow.map(c=>{ const e=c._e; if(e.length<20) return 0;
+    let s=0,n=Math.min(e.length,1600); for(let i=e.length-n;i<e.length;i++) s+=e[i]*e[i];
+    return Math.sqrt(s/n); });
+  let amp=1; for(let i=1;i<rms.length;i++){ if(rms[i-1]>0.02){ const r=rms[i]/rms[i-1];
+    if(r>amp) amp=r; } }
+  S.amp = S.amp*0.7 + amp*0.3;
+}
+
+// ------------------------------------------------------------- rendering -
+const road=document.getElementById('road'), rx=road.getContext('2d');
+const map=document.getElementById('map'), mx=map.getContext('2d');
+const ce=document.getElementById('chartErr'), ex=ce.getContext('2d');
+const cn=document.getElementById('chartNoise'), nx=cn.getContext('2d');
+function fit(cv,ctx){ const r=cv.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  if(cv.width!==Math.round(r.width*d)){ cv.width=Math.round(r.width*d);
+    cv.height=Math.round(cv.clientHeight*d); } ctx.setTransform(d,0,0,d,0,0);
+  return [cv.width/d, cv.height/d]; }
+
+function drawRoad(){
+  const [W,H]=fit(road,rx); rx.clearRect(0,0,W,H);
+  const hz=H*0.30;                                   // horizon
+  // sky + ground
+  let sky=rx.createLinearGradient(0,0,0,hz); sky.addColorStop(0,'#0a1420'); sky.addColorStop(1,'#122236');
+  rx.fillStyle=sky; rx.fillRect(0,0,W,hz);
+  let gnd=rx.createLinearGradient(0,hz,0,H); gnd.addColorStop(0,'#161b24'); gnd.addColorStop(1,'#0b0f16');
+  rx.fillStyle=gnd; rx.fillRect(0,hz,W,H-hz);
+  const cx=W/2, roadTop=18, roadBot=W*0.62;
+  // road surface (trapezoid)
+  rx.fillStyle='#12161e'; rx.beginPath();
+  rx.moveTo(cx-roadTop/2,hz); rx.lineTo(cx+roadTop/2,hz);
+  rx.lineTo(cx+roadBot/2,H); rx.lineTo(cx-roadBot/2,H); rx.closePath(); rx.fill();
+  // perspective mapping: distance behind camera -> screen
+  const camBack=10, far=Math.max(60,(S.N+1)*(L+R+S.h*V0)+30);
+  const proj=d=>{ const f=camBack/(camBack+d); const y=hz+(H-hz)*(1-f);
+    const wid=(roadTop+(roadBot-roadTop)*(1-f)); return [y,wid,f]; };
+  // scrolling lane dashes
+  rx.strokeStyle='rgba(150,170,200,.28)'; rx.lineWidth=2; rx.setLineDash([]);
+  for(let d=0; d<far; d+=6){ const off=(S.dispX%6);
+    const [y0,w0]=proj(d+off), [y1]=proj(d+off+3);
+    rx.globalAlpha=Math.max(0,1-d/far); rx.beginPath();
+    rx.moveTo(cx,y0); rx.lineTo(cx,y1); rx.stroke(); }
+  rx.globalAlpha=1;
+  // road edges
+  rx.strokeStyle='rgba(120,140,170,.35)'; rx.lineWidth=2;
+  rx.beginPath(); rx.moveTo(cx-roadTop/2,hz); rx.lineTo(cx-roadBot/2,H); rx.stroke();
+  rx.beginPath(); rx.moveTo(cx+roadTop/2,hz); rx.lineTo(cx+roadBot/2,H); rx.stroke();
+  // vehicles: camera behind last follower
+  const pCam=S.p[S.N]-camBack;
+  for(let i=S.N;i>=0;i--){                            // far (leader) first
+    const dist=S.p[i]-pCam; if(dist<0) continue;
+    const [y,wid,f]=proj(dist); const carW=Math.max(6,wid*0.46), carH=carW*0.52;
+    const isLead=i===0; const col=isLead?cLeader:colFollow[i-1].hex;
+    // collision-risk flash
+    const gap = i<S.N ? (S.p[i]-S.p[i+1]-L) : 99;
+    drawCar(cx,y,carW,carH,col,isLead,f, i>0 && (S.p[i-1]-S.p[i]-L)<3);
+  }
+  S.dispX += (S.v[S.N]||V0);                          // dash scroll ~ speed
+  // hud text
+  rx.fillStyle='rgba(233,238,246,.75)'; rx.font='11px '+MONO;
+  rx.fillText('v = '+(S.v[0]||0).toFixed(1)+' m/s',12,H-14);
+  rx.textAlign='right'; rx.fillText(S.N+' followers',W-12,H-14); rx.textAlign='left';
+}
+const MONO='ui-monospace,Consolas,monospace';
+function drawCar(cx,y,w,h,col,lead,f,risk){
+  const x=cx-w/2, top=y-h;
+  rx.save();
+  // shadow
+  rx.fillStyle='rgba(0,0,0,.35)'; rx.beginPath();
+  rx.ellipse(cx,y+2,w*0.6,h*0.2,0,0,7); rx.fill();
+  // body (trapezoid, roof narrower)
+  const rw=w*0.62;
+  rx.fillStyle=risk?cBad:col; rx.beginPath();
+  rx.moveTo(x,y); rx.lineTo(x+w,y); rx.lineTo(cx+rw/2,top+h*0.25);
+  rx.lineTo(cx-rw/2,top+h*0.25); rx.closePath(); rx.fill();
+  // roof
+  rx.fillStyle=shade(risk?cBad:col,-0.35); rx.beginPath();
+  rx.moveTo(cx-rw/2,top+h*0.25); rx.lineTo(cx+rw/2,top+h*0.25);
+  rx.lineTo(cx+rw*0.38,top); rx.lineTo(cx-rw*0.38,top); rx.closePath(); rx.fill();
+  // windshield
+  rx.fillStyle='rgba(20,30,45,.85)'; rx.fillRect(cx-rw*0.3,top+h*0.05,rw*0.6,h*0.16);
+  // lights (leader = headlights up-road dim; followers = red tail toward camera)
+  const lr=Math.max(1.2,w*0.09);
+  rx.fillStyle=lead?'rgba(255,240,180,.95)':'rgba(255,70,70,.95)';
+  rx.beginPath(); rx.arc(x+w*0.18,y-h*0.12,lr,0,7); rx.arc(x+w*0.82,y-h*0.12,lr,0,7); rx.fill();
+  if(lead && f>0.25){ rx.fillStyle='rgba(255,230,150,.12)'; rx.beginPath();
+    rx.moveTo(x+w*0.1,y); rx.lineTo(x-w*0.5,y+h*1.6); rx.lineTo(x+w*0.4,y+h*1.6); rx.closePath(); rx.fill(); }
+  rx.restore();
+}
+function shade(hex,amt){ // hex or rgb() -> darken
+  let r,g,b; const m=hex.match(/\d+/g);
+  if(hex[0]==='#'){ r=parseInt(hex.slice(1,3),16); g=parseInt(hex.slice(3,5),16); b=parseInt(hex.slice(5,7),16);}
+  else { [r,g,b]=m.map(Number); }
+  const f=1+amt; return `rgb(${Math.max(0,r*f)|0},${Math.max(0,g*f)|0},${Math.max(0,b*f)|0})`;
+}
+
+function drawMap(){
+  const [W,H]=fit(map,mx); mx.clearRect(0,0,W,H);
+  mx.fillStyle='#0b0f16'; mx.fillRect(0,0,W,H);
+  const y=H/2, m=28, span=W-2*m;
+  const pF=S.p[S.N], pL=S.p[0], tot=(pL-pF)||1;
+  // road band
+  mx.fillStyle='#12161e'; mx.fillRect(m-6,y-15,span+12,30);
+  mx.strokeStyle='rgba(150,170,200,.2)'; mx.setLineDash([6,7]); mx.lineWidth=1.5;
+  mx.beginPath(); mx.moveTo(m-6,y); mx.lineTo(W-m+6,y); mx.stroke(); mx.setLineDash([]);
+  for(let i=0;i<=S.N;i++){
+    const x=m+span*((S.p[i]-pF)/tot);
+    const lead=i===0, col=lead?cLeader:colFollow[i-1].hex;
+    const gap = i>0 ? (S.p[i-1]-S.p[i]-L) : null;
+    mx.fillStyle=col; roundRect(mx,x-9,y-6,18,12,3); mx.fill();
+    if(gap!==null){ const gx=(m+span*((S.p[i]-pF)/tot)+m+span*((S.p[i-1]-pF)/tot))/2;
+      mx.fillStyle=gap<6?cBad:(gap<14?cWarn:'rgba(147,163,186,.8)');
+      mx.font='9px '+MONO; mx.textAlign='center';
+      mx.fillText(gap.toFixed(1)+'m',gx,y-10); mx.textAlign='left'; }
+  }
+  mx.fillStyle='rgba(147,163,186,.9)'; mx.font='10px '+MONO;
+  mx.fillText('◄ leader',W-m-46,y+24); mx.fillText('tail ►',m-6,y+24);
+}
+function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+
+function drawChartErr(){
+  const [W,H]=fit(ce,ex); ex.clearRect(0,0,W,H);
+  const pad=30, x0=pad, x1=W-8, y0=10, y1=H-20;
+  let mx2=0.5; for(const c of colFollow) for(const p of c._e) mx2=Math.max(mx2,Math.abs(p[1]));
+  mx2=Math.min(mx2*1.15,60);
+  ex.strokeStyle='#1c2735'; ex.lineWidth=1; ex.beginPath();
+  ex.moveTo(x0,(y0+y1)/2); ex.lineTo(x1,(y0+y1)/2); ex.stroke();
+  ex.fillStyle='#5c6c82'; ex.font='9px '+MONO; ex.textAlign='right';
+  ex.fillText('+'+mx2.toFixed(0),x0-4,y0+8); ex.fillText('0',x0-4,(y0+y1)/2+3);
+  ex.fillText('-'+mx2.toFixed(0),x0-4,y1); ex.textAlign='left';
+  ex.fillText('δ [m]',x0,y0+8);
+  const tNow=S.t, tMin=tNow-CHART_T;
+  const X=t=>x0+(x1-x0)*clamp((t-tMin)/CHART_T,0,1);
+  const Y=v=>((y0+y1)/2)-(v/mx2)*((y1-y0)/2);
+  for(const c of colFollow){ const e=c._e; if(e.length<2) continue;
+    ex.strokeStyle=c.hex; ex.lineWidth=1.5; ex.beginPath(); let started=false;
+    for(const [t,v] of e){ if(t<tMin) continue; const px=X(t),py=Y(v);
+      if(!started){ex.moveTo(px,py);started=true;} else ex.lineTo(px,py); }
+    ex.stroke(); }
+}
+function drawChartNoise(){
+  const [W,H]=fit(cn,nx); nx.clearRect(0,0,W,H);
+  const x0=8,x1=W-8,mid=H/2, sc=H*0.34;
+  nx.strokeStyle='#1c2735'; nx.beginPath(); nx.moveTo(x0,mid); nx.lineTo(x1,mid); nx.stroke();
+  const tNow=S.t,tMin=tNow-CHART_T, X=t=>x0+(x1-x0)*clamp((t-tMin)/CHART_T,0,1);
+  const draw=(arr,col,lw)=>{ nx.strokeStyle=col; nx.lineWidth=lw; nx.beginPath(); let s=false;
+    for(const [t,v] of arr){ if(t<tMin) continue; const px=X(t),py=mid-clamp(v,-3,3)/3*sc;
+      if(!s){nx.moveTo(px,py);s=true;} else nx.lineTo(px,py);} nx.stroke(); };
+  draw(S.noiseRecv,cWarn,1); draw(S.noiseTrue,'#8aa0bd',1.6);
+}
+
+// --------------------------------------------------------- HUD + verdicts
+function updateHUD(){
+  document.getElementById('t-rho').textContent=S.ctl.rho.toFixed(1);
+  document.getElementById('t-h').innerHTML=S.h.toFixed(2)+'<small> s</small>';
+  document.getElementById('t-amp').innerHTML=S.amp.toFixed(2)+'<small>×</small>';
+  document.getElementById('t-gap').innerHTML=S.minGap.toFixed(1)+'<small> m</small>';
+  const stable = S.h>=hReq(S.ctl.rho)*0.999;
+  setBadge('b-design', stable?'good':'bad',
+    stable?'string-stable by design':'under-headway for ρ',
+    'h '+(stable?'≥':'<')+' h_req(ρ)='+hReq(S.ctl.rho).toFixed(2)+'s');
+  const amplifying=S.amp>1.05;
+  setBadge('b-string', amplifying?'bad':'good',
+    amplifying?'AMPLIFYING':'attenuating', 'worst hop L2 '+S.amp.toFixed(2));
+}
+function setBadge(id,cls,txt,title){ const b=document.getElementById(id);
+  b.className='badge '+cls; b.title=title;
+  b.innerHTML='<span class="k" style="background:currentColor"></span>'+txt; }
+
+// ------------------------------------------------------------- main loop -
+let last=performance.now(), acc=0;
+function frame(now){
+  const real=Math.min(0.05,(now-last)/1000); last=now;
+  if(S.playing){ acc+=real*S.speed;
+    let guard=0;
+    while(acc>=DT && guard++<600){ step(DT); acc-=DT;
+      // record traces at ~50 Hz
+      if((S._rec=(S._rec||0)+1)%4===0){ const t=S.t;
+        for(const c of colFollow){ c._e.push([t,c._eNow]);
+          if(c._e.length>1400) c._e.shift(); }
+        S.noiseTrue.push([t,S._trueA1||0]); S.noiseRecv.push([t,S._recvA1||0]);
+        if(S.noiseTrue.length>1400){S.noiseTrue.shift();S.noiseRecv.shift();} }
+      updateMetrics(DT);
+    }
+  }
+  drawRoad(); drawMap(); drawChartErr(); drawChartNoise(); updateHUD();
+  requestAnimationFrame(frame);
+}
+
+// ----------------------------------------------------------------- UI ----
+function bindRange(id,vid,fmt,set){ const s=document.getElementById(id),v=document.getElementById(vid);
+  const upd=()=>{ set(parseFloat(s.value)); v.textContent=fmt(parseFloat(s.value)); };
+  s.addEventListener('input',upd); upd(); }
+bindRange('s-rho','v-rho',x=>x.toFixed(1),x=>S.ctl.rho=x);
+bindRange('s-delay','v-delay',x=>x.toFixed(2)+' s',x=>S.ctl.delay=x);
+bindRange('s-loss','v-loss',x=>x.toFixed(0)+' %',x=>S.ctl.loss=x/100);
+bindRange('s-amp','v-amp',x=>x.toFixed(1)+' m/s²',x=>S.ctl.amp=x);
+bindRange('s-n','v-n',x=>x.toFixed(0),x=>{ S.N=x|0; followerColors(S.N); build(); });
+document.getElementById('tg-adapt').addEventListener('click',function(){
+  S.adapt=!S.adapt; this.classList.toggle('on',S.adapt); });
+document.getElementById('btn-play').addEventListener('click',function(){
+  S.playing=!S.playing; this.textContent=S.playing?'⏸ Pause':'▶ Play'; });
+document.getElementById('btn-reset').addEventListener('click',()=>build());
+document.getElementById('seg-speed').addEventListener('click',e=>{
+  if(e.target.dataset.v){ S.speed=parseFloat(e.target.dataset.v);
+    [...e.currentTarget.children].forEach(b=>b.classList.toggle('sel',b===e.target)); }});
+document.getElementById('seg-preset').addEventListener('click',e=>{
+  const p=e.target.dataset.p; if(!p) return;
+  const set=(rho,delay,loss,adapt)=>{ S.ctl.rho=rho; S.ctl.delay=delay; S.ctl.loss=loss;
+    S.adapt=adapt; document.getElementById('s-rho').value=rho;
+    document.getElementById('s-delay').value=delay; document.getElementById('s-loss').value=loss*100;
+    document.getElementById('v-rho').textContent=rho.toFixed(1);
+    document.getElementById('v-delay').textContent=delay.toFixed(2)+' s';
+    document.getElementById('v-loss').textContent=(loss*100).toFixed(0)+' %';
+    document.getElementById('tg-adapt').classList.toggle('on',adapt); };
+  if(p==='clean') set(10,0,0,false);
+  if(p==='zone') set(3,0,0,true);
+  if(p==='delay') set(5,0.15,0,false);
+  build();
+});
+
+// build the per-follower legend
+function buildLegend(){ const el=document.getElementById('err-legend'); el.innerHTML='';
+  colFollow.forEach((c,i)=>{ const s=document.createElement('span');
+    s.innerHTML=`<i style="background:${c.hex}"></i>veh ${i+1}`; el.appendChild(s); }); }
+
+// go
+followerColors(S.N); build(); buildLegend();
+document.getElementById('s-n').addEventListener('change',buildLegend);
+requestAnimationFrame(frame);
+</script>

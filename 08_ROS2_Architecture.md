@@ -17,6 +17,7 @@ Sources live in this repo (`ros2_ws/src/`), builds happen on WSL ext4.
                      │  Bernoulli loss • multiplicative noise w(t)  │
                      └─/platoon/v1/v2v ─┘        └─/platoon/v2/v2v ─┘
  recorder ◄── all /platoon/v*/state ──► results CSV
+ viz_node / gz_bridge_node ◄── all /platoon/v*/state ──► rviz2 markers / Gazebo poses
 ```
 
 * `cacc_platoon_msgs` (ament_cmake): `VehicleState` (index, t, p, v, a, u, e),
@@ -106,7 +107,10 @@ bracketing the ROS observations).
 cases (h = 0.65 unstable case, delay/loss studies: `delay_s`, `loss_prob`,
 `noise_rho`). `noise_rho: 0` disables channel noise.
 
-## 7. Car visualization (D-015)
+## 7. Car visualization (D-015, D-020)
+
+Three views of the **one** physics (the CACC vehicle nodes stay the sole
+authority): rviz2 markers, a Gazebo 3-D world, and an offline MP4 renderer.
 
 **Live 3D (rviz2, WSLg):** `viz_node` publishes car-body CUBE markers
 (colored green→red by |spacing error|, text labels with speed/error) plus a
@@ -120,6 +124,27 @@ bash scripts/ros2_view_demo.sh 6 cthp ma2025_case_a.yaml
 
 (or add `viz:=true` to any `ros2 launch cacc_platoon platoon.launch.py` and
 open `rviz2 -d ~/cacc_ws/src/cacc_platoon/config/platoon.rviz`.)
+
+**Live 3D (Gazebo / gz-sim Harmonic, D-020):** a genuine 3-D world
+(`worlds/highway.sdf`) with colored `cacc_car` models on a dashed highway.
+The cars are **kinematic** — visual-only, gravity off — and `gz_bridge_node`
+teleports each to its live CACC position (platoon frame) every tick via the
+`set_pose` service, so Gazebo *renders* the paper-validated dynamics without
+ever simulating them. Verified end-to-end on gz-sim Harmonic 8.14.0 (D-020).
+Requires a one-time install **not** pulled by `ros-jazzy-desktop`:
+
+```bash
+bash scripts/setup_gazebo_wsl.sh          # adds OSRF repo + installs the stack
+# then (inside WSL, after ros2_sync_build.sh):
+bash scripts/ros2_gazebo_demo.sh 6 cthp ma2025_case_a.yaml rviz
+```
+
+`gazebo.launch.py` starts gz-sim, spawns N+1 cars, includes
+`platoon.launch.py` (identical nodes/physics) and the bridge; `rviz:=true`
+opens the rviz markers alongside (both 3-D views at once), `headless:=true`
+runs the server only. The runner pre-checks the gz stack and prints the exact
+`apt install` line if missing; Gazebo is optional — the core sim, rviz2 and
+the MP4 renderer work without it.
 
 **MP4/GIF renderer (Windows, conda env `cacc`):** top-down highway
 animation with error-colored cars, tracking camera and speed/error traces,

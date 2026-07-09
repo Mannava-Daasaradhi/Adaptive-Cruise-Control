@@ -59,6 +59,7 @@ class AdaptConfig:
     kv_frac: float = 0.9  # kv target as a fraction of the eq.-28a ceiling
     rho_lpf_tau: float = 0.0  # [s] asymmetric rho_hat smoothing (D-019); 0 = off
     stagger_s: float = 0.0  # [s] per-follower h-recovery serialization (D-019)
+    preview_s: float = 0.0  # [s] predictive QoS-map lookahead horizon (D-021); 0 = off
 
 
 class ChannelEstimator:
@@ -213,19 +214,31 @@ class HeadwayAdapter:
                      + (1 - fr) * ft * t[i, j + 1] + fr * ft * t[i + 1, j + 1])
 
     def update(self, dt: float, rho_hat: float | None,
-               h_required: float | None = None) -> float:
+               h_required: float | None = None,
+               rho_preview: float | None = None) -> float:
         """Advance h(t) one estimator period toward the current target.
 
         ``h_required`` overrides the internal fixed-gain lookup (used when a
         :class:`GainScheduler` supplies the requirement at re-tuned gains).
+
+        ``rho_preview`` is the predictive QoS-map lookahead (D-021): the worst
+        channel the follower will meet within the preview horizon. The target
+        opens for the WORSE of the measured and previewed channels, so the gap
+        is already open on entry. The map is known exactly (no ``rho_safety``
+        divide) and available before the estimator warms up, so a pure preview
+        (``rho_hat is None``) still drives the headway.
         """
         c = self.cfg
-        if rho_hat is None:  # channel not yet observable: hold
+        req = None
+        if rho_hat is not None:  # measured (reactive) requirement
+            rho_safe = max(1.05, rho_hat / c.rho_safety)
+            req = self.h_required(rho_safe) if h_required is None else h_required
+        if rho_preview is not None:  # previewed (anticipatory) requirement
+            req_prev = self.h_required(max(1.05, float(rho_preview)))
+            req = req_prev if req is None else max(req, req_prev)
+        if req is None:  # neither channel observable yet: hold
             return self.h
-        rho_safe = max(1.05, rho_hat / c.rho_safety)
-        if h_required is None:
-            h_required = self.h_required(rho_safe)
-        target = min(c.h_max, c.margin + h_required)
+        target = min(c.h_max, c.margin + req)
         # front-first staggered recovery (D-019): a material headway
         # DECREASE waits out this follower's serialization slot so the
         # platoon's gap-closing ramps do not superpose into one long wave;

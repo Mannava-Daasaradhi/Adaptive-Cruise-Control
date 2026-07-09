@@ -19,6 +19,10 @@ from cacc.analysis import (
     is_string_stable,
     min_stable_headway,
 )
+from cacc.certificate import (ChannelLaw, amp_at, chance_headway,
+                              chebyshev_headway, certify_design, exceedance_prob,
+                              mean_square_amp, meansquare_headway,
+                              nominal_headway, worstcase_headway)
 from cacc.controllers import ACC, CACC, CTHP, ControllerParams, make_controller
 from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
@@ -42,10 +46,20 @@ __all__ = [
     "CACC",
     "CTHP",
     "ChannelEstimator",
+    "ChannelLaw",
     "ControllerParams",
     "GainScheduler",
     "HeadwayAdapter",
     "LinkAttack",
+    "amp_at",
+    "certify_design",
+    "chance_headway",
+    "chebyshev_headway",
+    "exceedance_prob",
+    "mean_square_amp",
+    "meansquare_headway",
+    "nominal_headway",
+    "worstcase_headway",
     "MA2025_GAMMAS",
     "PlatoonConfig",
     "PlatoonSim",

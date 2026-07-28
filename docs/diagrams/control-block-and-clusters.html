@@ -1,0 +1,355 @@
+<title>CACC — Base Control Block Diagram &amp; System Clusters</title>
+<style>
+  :root{
+    --ink:#10151c; --paper:#e9edf1; --paper-raised:#f6f8f9;
+    --muted:#5b6672; --line:#c4cdd3; --code-bg:#dde3e7;
+    --shadow:0 1px 2px rgba(16,21,28,.06), 0 6px 18px rgba(16,21,28,.05);
+    --spine:#1f6f78;
+    /* validated 8-slot categorical palette, fixed order, light */
+    --c1:#2a78d6; --c2:#008300; --c3:#e87ba4; --c4:#eda100;
+    --c5:#1baf7a; --c6:#eb6834; --c7:#4a3aa7; --c8:#e34948;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#e7ecef; --paper:#0c1015; --paper-raised:#141a21;
+      --muted:#8b98a3; --line:#2a333c; --code-bg:#1a222b;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+      --spine:#5fd0d8;
+      --c1:#3987e5; --c2:#008300; --c3:#d55181; --c4:#c98500;
+      --c5:#199e70; --c6:#d95926; --c7:#9085e9; --c8:#e66767;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e7ecef; --paper:#0c1015; --paper-raised:#141a21;
+    --muted:#8b98a3; --line:#2a333c; --code-bg:#1a222b;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    --spine:#5fd0d8;
+    --c1:#3987e5; --c2:#008300; --c3:#d55181; --c4:#c98500;
+    --c5:#199e70; --c6:#d95926; --c7:#9085e9; --c8:#e66767;
+  }
+  :root[data-theme="light"]{
+    --ink:#10151c; --paper:#e9edf1; --paper-raised:#f6f8f9;
+    --muted:#5b6672; --line:#c4cdd3; --code-bg:#dde3e7;
+    --shadow:0 1px 2px rgba(16,21,28,.06), 0 6px 18px rgba(16,21,28,.05);
+    --spine:#1f6f78;
+    --c1:#2a78d6; --c2:#008300; --c3:#e87ba4; --c4:#eda100;
+    --c5:#1baf7a; --c6:#eb6834; --c7:#4a3aa7; --c8:#e34948;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'IBM Plex Sans','Source Sans 3',-apple-system,'Segoe UI',sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .mono{ font-family:'IBM Plex Mono','JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace; }
+
+  .sheet{ max-width:1240px; margin:0 auto; padding:0 20px 90px; }
+  .titleblock{
+    display:grid; grid-template-columns:1fr auto; gap:14px 28px; align-items:end;
+    padding:28px 0 18px; border-bottom:3px solid var(--ink);
+  }
+  .titleblock h1{ margin:0; font-size:clamp(1.4rem,3vw,2.05rem); font-weight:700; letter-spacing:-.01em; text-wrap:balance; }
+  .titleblock .sub{ margin:.35em 0 0; color:var(--muted); font-size:.96rem; max-width:64ch; }
+  .tb-meta{ text-align:right; font-family:'IBM Plex Mono',monospace; font-size:.72rem; color:var(--muted); line-height:1.7; }
+  .tb-meta b{ color:var(--ink); }
+
+  h2.section{
+    margin:54px 0 6px; font-size:1.02rem; text-transform:uppercase; letter-spacing:.09em;
+    font-weight:700; display:flex; align-items:baseline; gap:.6em;
+  }
+  h2.section .n{ font-family:'IBM Plex Mono',monospace; color:var(--muted); font-size:.85rem; }
+  p.lede{ margin:2px 0 24px; color:var(--muted); max-width:76ch; font-size:.95rem; }
+
+  .diagram-wrap{ overflow-x:auto; padding-bottom:6px; }
+  .diagram{
+    min-width:1040px; background:var(--paper-raised); border:1px solid var(--line);
+    border-radius:8px; padding:18px; box-shadow:var(--shadow);
+  }
+  svg{ display:block; width:100%; height:auto; }
+  .sig{ font-family:'IBM Plex Mono',monospace; font-size:14px; fill:var(--ink); }
+  .lbl{ font-family:'IBM Plex Mono',monospace; font-size:13px; fill:var(--muted); }
+  .lbl-em{ font-family:'IBM Plex Mono',monospace; font-size:13px; fill:var(--spine); font-weight:700;}
+  .boxtitle{ font-family:'IBM Plex Sans',sans-serif; font-weight:700; font-size:16px; fill:var(--ink); }
+  .boxfile{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; fill:var(--muted); }
+  .boxformula{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; fill:var(--ink); }
+  .pm{ font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:18px; fill:var(--ink); }
+
+  .note{
+    font-size:.78rem; color:var(--muted); margin-top:18px; padding-top:14px;
+    border-top:1px dashed var(--line); max-width:none;
+  }
+  .note b{ color:var(--ink); }
+
+  /* ---------- cluster map ---------- */
+  .clusters{ display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:20px; }
+  .cluster{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:8px;
+    padding:18px 20px 20px; box-shadow:var(--shadow); border-top:5px solid var(--accent);
+  }
+  .cluster .head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .cluster .roman{
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:1.15rem; color:var(--accent);
+  }
+  .cluster h3{ margin:0; font-size:1.02rem; font-weight:700; }
+  .cluster .goal{ margin:6px 0 14px; font-size:.85rem; color:var(--muted); line-height:1.5; }
+  .sys-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .sys-grid.n1{ grid-template-columns:1fr; }
+  .sys-grid.n3, .sys-grid.n5{ grid-template-columns:1fr 1fr; }
+  .sys{
+    background:var(--paper); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:4px; padding:7px 10px 8px;
+  }
+  .sys .num{ font-family:'IBM Plex Mono',monospace; font-size:.68rem; color:var(--accent); font-weight:700; }
+  .sys .nm{ font-size:.82rem; font-weight:600; margin:1px 0 2px; }
+  .sys .job{ font-size:.72rem; color:var(--muted); line-height:1.35; }
+
+  .legend-strip{ display:flex; flex-wrap:wrap; gap:8px 16px; margin:14px 0 30px; }
+  .legend-strip .lg{ display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:.72rem; color:var(--muted); }
+  .legend-strip .sw{ width:12px; height:12px; border-radius:3px; flex:none; }
+
+  footer{ margin-top:56px; padding-top:16px; border-top:1px solid var(--line); font-size:.78rem; color:var(--muted); }
+
+  @media (max-width:860px){ .clusters{ grid-template-columns:1fr; } }
+</style>
+
+<div class="sheet">
+
+  <div class="titleblock">
+    <div>
+      <h1>Base Control-Block Diagram &amp; the 25 Systems in 8 Clusters</h1>
+      <p class="sub">The classic feedback/feedforward loop for one predecessor&ndash;follower pair, and a clear map of every subsystem grouped by what it's trying to achieve.</p>
+    </div>
+    <div class="tb-meta">
+      SHEET&nbsp;2&nbsp;·&nbsp;REV&nbsp;2026-07-15<br>
+      PROJECT&nbsp;<b>06-CACC</b><br>
+      COMPANION&nbsp;TO&nbsp;<b>T-09</b>
+    </div>
+  </div>
+
+  <!-- ============ PART 1 : BLOCK DIAGRAM ============ -->
+  <h2 class="section"><span class="n">§1</span> The base control-block diagram</h2>
+  <p class="lede">One follower vehicle <span class="mono">i</span>, its predecessor <span class="mono">i&minus;1</span>. Two genuinely separate signals arrive from the predecessor &mdash; a physical radar sighting (bottom, feedback) and a radioed acceleration value (top, feedforward) &mdash; and that separation is the entire mechanism CACC is built on. <span class="mono">+</span>/<span class="mono">&minus;</span> mark the summing junction's two inputs; dashed = an internal tap, not an external sensor.</p>
+
+  <div class="diagram-wrap">
+    <div class="diagram">
+      <svg viewBox="0 0 1600 700" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--ink)"></path>
+          </marker>
+          <marker id="arrowMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"></path>
+          </marker>
+        </defs>
+
+        <!-- ===== connectors (drawn first, under boxes) ===== -->
+        <g fill="none" stroke="var(--ink)" stroke-width="2">
+          <path d="M160,290 L210,290 L210,130 L248,130" marker-end="url(#arrow)"></path>
+          <path d="M160,370 L210,370 L210,550 L248,550" marker-end="url(#arrow)"></path>
+          <path d="M470,130 L900,130 L900,248" marker-end="url(#arrow)"></path>
+          <path d="M450,510 L450,352 L630,352" marker-end="url(#arrow)"></path>
+          <path d="M470,550 L900,550 L900,412" marker-end="url(#arrow)"></path>
+          <path d="M620,265 L620,306 L644,318" marker-end="url(#arrow)"></path>
+          <path d="M674,330 L828,330" marker-end="url(#arrow)"></path>
+          <path d="M1050,330 L1108,330" marker-end="url(#arrow)"></path>
+          <path d="M1250,330 L1308,330" marker-end="url(#arrow)"></path>
+          <path d="M1480,330 L1560,330" marker-end="url(#arrow)"></path>
+        </g>
+        <path d="M1395,395 L1395,655 L560,655 L560,232" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowMuted)"></path>
+
+        <!-- ===== summing junction ===== -->
+        <circle cx="650" cy="330" r="24" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"></circle>
+        <line x1="650" y1="330" x2="650" y2="330" stroke="none"></line>
+        <text x="628" y="322" class="pm" text-anchor="middle">&minus;</text>
+        <text x="638" y="349" class="pm" text-anchor="middle">+</text>
+
+        <!-- ===== PREDECESSOR ===== -->
+        <rect x="20" y="250" width="140" height="160" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"></rect>
+        <text x="90" y="285" text-anchor="middle" class="boxtitle">PREDECESSOR</text>
+        <text x="90" y="304" text-anchor="middle" class="boxfile">vehicle i&minus;1</text>
+        <text x="90" y="335" text-anchor="middle" class="lbl">physical presence</text>
+        <text x="90" y="352" text-anchor="middle" class="lbl">+ radio broadcast</text>
+        <text x="90" y="380" text-anchor="middle" class="lbl" font-style="italic">(if i=1: the LEADER &mdash;</text>
+        <text x="90" y="396" text-anchor="middle" class="lbl" font-style="italic">disturbance origin)</text>
+
+        <!-- ===== V2V LINK (feedforward, top) ===== -->
+        <rect x="248" y="90" width="222" height="80" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"></rect>
+        <text x="359" y="114" text-anchor="middle" class="boxtitle">V2V RADIO LINK</text>
+        <text x="359" y="130" text-anchor="middle" class="boxfile">network.py &middot; Sys 5&ndash;7</text>
+        <text x="359" y="150" text-anchor="middle" class="boxformula">w&isin;[1&minus;1/&rho;,1+1/&rho;) &middot; &theta; &middot; loss</text>
+        <text x="359" y="66" text-anchor="middle" class="lbl-em">FEEDFORWARD PATH</text>
+
+        <!-- ===== REFERENCE ===== -->
+        <rect x="560" y="195" width="170" height="70" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"></rect>
+        <text x="645" y="217" text-anchor="middle" class="boxtitle" font-size="14">SPACING POLICY</text>
+        <text x="645" y="233" text-anchor="middle" class="boxfile">reference generator</text>
+        <text x="645" y="251" text-anchor="middle" class="boxformula">d_des,i = r + h&middot;v_i</text>
+
+        <!-- ===== CONTROLLER ===== -->
+        <rect x="828" y="250" width="222" height="160" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"></rect>
+        <text x="939" y="274" text-anchor="middle" class="boxtitle">CTHP CONTROLLER</text>
+        <text x="939" y="290" text-anchor="middle" class="boxfile">controllers.py &middot; Sys 2</text>
+        <line x1="850" y1="300" x2="1028" y2="300" stroke="var(--line)"></line>
+        <text x="860" y="318" class="sig">kp&middot;e_i</text>
+        <text x="860" y="338" class="sig">+ kv&middot;&Delta;v_i</text>
+        <text x="860" y="358" class="sig">+ ka&middot;u_ff_eff</text>
+        <line x1="850" y1="368" x2="1028" y2="368" stroke="var(--line)"></line>
+        <text x="939" y="392" text-anchor="middle" class="boxformula">u_i = &Sigma; (above)</text>
+        <text x="900" y="244" text-anchor="middle" class="lbl">u_ff_eff</text>
+        <text x="900" y="430" text-anchor="middle" class="lbl">&Delta;v_i</text>
+
+        <!-- ===== ACTUATOR ===== -->
+        <rect x="1108" y="280" width="142" height="100" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"></rect>
+        <text x="1179" y="306" text-anchor="middle" class="boxtitle" font-size="14">ACTUATOR</text>
+        <text x="1179" y="322" text-anchor="middle" class="boxfile">lag + saturation</text>
+        <text x="1179" y="342" text-anchor="middle" class="boxformula">a&#775;=(u&minus;a)/&tau;</text>
+        <text x="1179" y="360" text-anchor="middle" class="boxfile">u&isin;[u_min,u_max]</text>
+
+        <!-- ===== PLANT ===== -->
+        <rect x="1308" y="265" width="172" height="130" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"></rect>
+        <text x="1394" y="290" text-anchor="middle" class="boxtitle">PLANT</text>
+        <text x="1394" y="306" text-anchor="middle" class="boxfile">vehicle.py &middot; Sys 1</text>
+        <text x="1394" y="328" text-anchor="middle" class="boxformula">p&#775;=v</text>
+        <text x="1394" y="346" text-anchor="middle" class="boxformula">v&#775;=a</text>
+        <text x="1394" y="364" text-anchor="middle" class="boxfile">(double integrator)</text>
+        <text x="1394" y="385" text-anchor="middle" class="lbl">p_i, v_i, a_i</text>
+
+        <!-- ===== RADAR (feedback, bottom) ===== -->
+        <rect x="248" y="510" width="222" height="80" rx="6" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"></rect>
+        <text x="359" y="534" text-anchor="middle" class="boxtitle">RADAR / SENSOR</text>
+        <text x="359" y="550" text-anchor="middle" class="boxfile">onboard, line-of-sight</text>
+        <text x="359" y="570" text-anchor="middle" class="boxformula">d_i, &Delta;v_i (direct measure)</text>
+        <text x="359" y="614" text-anchor="middle" class="lbl-em">FEEDBACK PATH</text>
+
+        <!-- ===== labels on connectors ===== -->
+        <text x="180" y="115" class="lbl" text-anchor="middle">a_(i&minus;1)(t)</text>
+        <text x="180" y="595" class="lbl" text-anchor="middle">predecessor gap</text>
+        <text x="700" y="120" class="lbl" text-anchor="middle">radioed, noisy/delayed/lossy</text>
+        <text x="500" y="345" class="lbl">d_i &nbsp;(&ldquo;+&rdquo; input)</text>
+        <text x="690" y="540" class="lbl">&Delta;v_i (direct to controller)</text>
+        <text x="740" y="322" class="lbl">e_i</text>
+        <text x="1078" y="322" class="lbl">u_i</text>
+        <text x="1278" y="322" class="lbl">a_i</text>
+        <text x="1500" y="315" class="lbl-em">TO VEHICLE i+1</text>
+        <text x="1500" y="332" class="lbl">(cascade / interconnection)</text>
+        <text x="960" y="645" class="lbl" font-style="italic">own v_i &mdash; odometer, no predecessor data needed (dashed = internal tap)</text>
+
+        <!-- ===== lane dividers / titles ===== -->
+        <text x="20" y="40" class="lbl-em">TWO SIGNALS ARRIVE FROM THE PREDECESSOR &mdash; ONE RADIOED (TOP), ONE SENSED (BOTTOM)</text>
+      </svg>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Reading this diagram:</b> the summing junction computes <span class="mono">e_i = d_i &minus; d_des,i</span> (T-02) &mdash; actual gap in on <span class="mono">+</span>, the speed-dependent desired gap in on <span class="mono">&minus;</span>. The controller is drawn with its internal summing block exposed because <span class="mono">u_i</span> genuinely is three terms added together, one of which (<span class="mono">ka&middot;u_ff_eff</span>) comes from a completely different sensing modality than the other two. The dashed loop is <b>not</b> a sensor reading &mdash; it's the follower's own speedometer, feeding its own reference generator; nothing about it depends on the predecessor at all. Saturation lives inside the Actuator block, which is why the certification suite checks it on the raw nonlinear simulation separately from the linear <span class="mono">‖H̃‖&infin;</span> theory (T-01, T-09 &sect;1).
+  </div>
+
+  <!-- ============ PART 2 : CLUSTER MAP ============ -->
+  <h2 class="section"><span class="n">§2</span> The 25 systems, in 8 clusters</h2>
+  <p class="lede">Every subsystem in the project, grouped by what it's actually trying to achieve &mdash; not by which file it lives in. Colour identifies the cluster only; every card also carries its number and name as text.</p>
+
+  <div class="legend-strip">
+    <div class="lg"><span class="sw" style="background:var(--c1)"></span>I &middot; Core Engine</div>
+    <div class="lg"><span class="sw" style="background:var(--c2)"></span>II &middot; V2V Channel</div>
+    <div class="lg"><span class="sw" style="background:var(--c3)"></span>III &middot; QoS-Adaptive Pipeline</div>
+    <div class="lg"><span class="sw" style="background:var(--c4)"></span>IV &middot; Gain Adaptation</div>
+    <div class="lg"><span class="sw" style="background:var(--c5)"></span>V &middot; Metrics &amp; Certification</div>
+    <div class="lg"><span class="sw" style="background:var(--c6)"></span>VI &middot; ROS 2 Backend</div>
+    <div class="lg"><span class="sw" style="background:var(--c7)"></span>VII &middot; Visualization</div>
+    <div class="lg"><span class="sw" style="background:var(--c8)"></span>VIII &middot; Flagship</div>
+  </div>
+
+  <div class="clusters">
+
+    <div class="cluster" style="--accent:var(--c1)">
+      <div class="head"><span class="roman">I</span><h3>Core Engine</h3></div>
+      <p class="goal">Build the one shared, honest foundation everything else stands on: how a car moves, how it decides what to do, how many cars run forward in time together, and the one true mathematical judge of "is this safe."</p>
+      <div class="sys-grid">
+        <div class="sys"><div class="num">SYS 1</div><div class="nm">Vehicle model</div><div class="job">double integrator + actuator lag &mdash; engines/brakes don't respond instantly</div></div>
+        <div class="sys"><div class="num">SYS 2</div><div class="nm">Control-law bank</div><div class="job">three drivers (ACC / CACC / CTHP) for a fair comparison</div></div>
+        <div class="sys"><div class="num">SYS 3</div><div class="nm">Platoon orchestrator</div><div class="job">the conductor &mdash; steps every car forward together, predecessor-only visibility</div></div>
+        <div class="sys"><div class="num">SYS 4</div><div class="nm">Stability analyzer</div><div class="job">the referee &mdash; the one exact ‖H̃‖&infin; safety verdict everyone reports through</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c2)">
+      <div class="head"><span class="roman">II</span><h3>The V2V Channel</h3></div>
+      <p class="goal">Be honest that a wireless link isn't a wire: it can lie a little, arrive late, or not arrive at all &mdash; three separate failure modes, modeled separately.</p>
+      <div class="sys-grid n3">
+        <div class="sys"><div class="num">SYS 5</div><div class="nm">Noise model</div><div class="job">the radio rounds/compresses the value it sends (16-bit)</div></div>
+        <div class="sys"><div class="num">SYS 6</div><div class="nm">Delay model</div><div class="job">a message isn't visible until it physically arrives</div></div>
+        <div class="sys"><div class="num">SYS 7</div><div class="nm">Packet-loss model</div><div class="job">sometimes it just never arrives &mdash; found: delay hurts far more than loss</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c3)">
+      <div class="head"><span class="roman">III</span><h3>QoS-Adaptive Pipeline</h3></div>
+      <p class="goal">Give the car a sixth sense about its own radio, instead of assuming a perfect, known channel. The project's first original contribution.</p>
+      <div class="sys-grid n3">
+        <div class="sys"><div class="num">SYS 8</div><div class="nm">Channel estimator</div><div class="job">"how good is my radio right now" &mdash; beacon vs. radar mismatch</div></div>
+        <div class="sys"><div class="num">SYS 9</div><div class="nm">Timestamp predictor</div><div class="job">un-delays the message using its own timestamp</div></div>
+        <div class="sys"><div class="num">SYS 10</div><div class="nm">Headway adapter</div><div class="job">smoothly widens/closes the gap on what's now known</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c4)">
+      <div class="head"><span class="roman">IV</span><h3>Gain Adaptation</h3></div>
+      <p class="goal">When widening the gap alone isn't enough, also change how hard the car reacts &mdash; not just how far back it sits.</p>
+      <div class="sys-grid n1">
+        <div class="sys"><div class="num">SYS 11</div><div class="nm">Online gain scheduler</div><div class="job">moves kp/kv live too, breaking the fixed-gain "wall" System 10 hits alone</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c5)">
+      <div class="head"><span class="roman">V</span><h3>Metrics &amp; Certification</h3></div>
+      <p class="goal">Turn a pile of simulation numbers into a decision a human can trust without reading code.</p>
+      <div class="sys-grid">
+        <div class="sys"><div class="num">SYS 12</div><div class="nm">Metrics &amp; logging</div><div class="job">L2 amplification, throughput, RMS accel &mdash; deterministic, reproducible</div></div>
+        <div class="sys"><div class="num">SYS 13</div><div class="nm">Certification harness</div><div class="job">one command, a fixed scenario matrix, a pass/fail report &mdash; the "test track" button</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c6)">
+      <div class="head"><span class="roman">VI</span><h3>ROS 2 Distributed Backend</h3></div>
+      <p class="goal">Stop taking the easy way out &mdash; prove the control law survives as separate real processes with real clocks, not one convenient shared-memory script.</p>
+      <div class="sys-grid">
+        <div class="sys"><div class="num">SYS 14</div><div class="nm">Message package</div><div class="job">the shared wire format every node speaks</div></div>
+        <div class="sys"><div class="num">SYS 15</div><div class="nm">Per-vehicle node</div><div class="job">one real OS process per car, imports Sys 1&ndash;2 verbatim</div></div>
+        <div class="sys"><div class="num">SYS 16</div><div class="nm">Distributed V2V node</div><div class="job">Sys 5&ndash;7's impairments as real message-passing</div></div>
+        <div class="sys"><div class="num">SYS 17</div><div class="nm">Leader &amp; recorder</div><div class="job">the prescribed maneuver + the CSV logger</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c7)">
+      <div class="head"><span class="roman">VII</span><h3>Visualization</h3></div>
+      <p class="goal">Make the trustworthy math actually visible &mdash; different audiences need genuinely different views.</p>
+      <div class="sys-grid n5">
+        <div class="sys"><div class="num">SYS 18</div><div class="nm">rviz2 3-D markers</div><div class="job">live, color-coded, camera rides with the platoon</div></div>
+        <div class="sys"><div class="num">SYS 19</div><div class="nm">Gazebo world</div><div class="job">a real physics engine, driven by our physics, not its own</div></div>
+        <div class="sys"><div class="num">SYS 20</div><div class="nm">Offline renderer</div><div class="job">top-down MP4/GIF from any run, no ROS needed</div></div>
+        <div class="sys"><div class="num">SYS 21</div><div class="nm">Browser demo</div><div class="job">the real physics in JS, live sliders, zero backend</div></div>
+        <div class="sys"><div class="num">SYS 22</div><div class="nm">Results dashboard</div><div class="job">auto-discovers every run, one self-contained HTML report</div></div>
+      </div>
+    </div>
+
+    <div class="cluster" style="--accent:var(--c8)">
+      <div class="head"><span class="roman">VIII</span><h3>Flagship</h3></div>
+      <p class="goal">Go past "deploy the paper honestly" &mdash; defend against three failure modes the base paper never poses as questions at all: being late, being lied to, and not knowing how safe "safe" really is.</p>
+      <div class="sys-grid n3">
+        <div class="sys"><div class="num">SYS 23</div><div class="nm">Predictive QoS map</div><div class="job">opens the gap before a mapped bad-radio zone, not after</div></div>
+        <div class="sys"><div class="num">SYS 24</div><div class="nm">Trust gate</div><div class="job">caps how much a lying radio can inject &mdash; provable bound</div></div>
+        <div class="sys"><div class="num">SYS 25</div><div class="nm">Risk certificate</div><div class="job">turns pass/fail into an exact failure probability</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    Block diagram verified against <span class="mono">src/cacc/vehicle.py</span>, <span class="mono">controllers.py</span> (T-01, T-02).
+    Cluster map sourced from <span class="mono">docs/MASTER_SYSTEM_EXPLAINER.md</span> Part 2. Categorical colour order is a validated
+    8-slot palette (fixed order, colour never carries meaning alone &mdash; every card is also labelled by number and name).
+    Companion to <span class="mono">docs/theory/T-09-system-classification-and-block-diagrams.md</span>.
+  </footer>
+
+</div>

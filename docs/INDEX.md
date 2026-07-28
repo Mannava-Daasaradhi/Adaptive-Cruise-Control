@@ -1,6 +1,8 @@
 # Documentation index
 
-**Start here:** `../10_Handoff_Plan.md` (the execution plan) →
+**Start here:** `MASTER_SYSTEM_EXPLAINER.md` (plain-English tour of all
+10 systems, how they talk to each other, and the base-paper deltas) →
+`../10_Handoff_Plan.md` (the execution plan) →
 `../09_QoS_Adaptive_CACC.md` (the novel contribution) →
 `../05_Decision_Log.md` (why everything is the way it is).
 
@@ -30,6 +32,16 @@ architecture & environment (D-011, D-012) · real-time correctness
 | T-06 | delay, the noise×delay interaction, the predictor operator |
 | T-07 | fixed-gain requirement, the wall, ρ*, the re-tuning fix |
 | T-08 | quasi-static adaptation argument + honesty section |
+| T-09 | system classification (what kind of system) + control-block diagrams (base + flagship) + signal-flow/comm architecture ledger |
+| T-10 | QoS-adaptive & flagship formulas in full detail: ρ̂ estimation, delay predictor, fixed-gain wall, quasi-static argument, Flagship A/B/C derivations |
+
+## Diagrams (`diagrams/`)
+Open these directly in a browser. `architecture-signal-flow.html` — the
+two-runtime signal-flow/communication schematic (per-tick call order,
+ROS 2 topic chain, full ledger). `control-block-and-clusters.html` — the
+rendered base control-block diagram (reference/summing-junction/
+controller/plant/feedback/feedforward) plus all 25 systems grouped into
+their 8 clusters. Companions to T-09.
 
 ## Reference (`reference/`)
 R-01 package overview/API/principles · R-02 vehicle+controllers ·

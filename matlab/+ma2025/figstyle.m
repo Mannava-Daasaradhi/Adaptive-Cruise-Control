@@ -1,0 +1,39 @@
+function fh = figstyle(name, w, h)
+%FIGSTYLE  Open a consistently styled figure for the reproduction plots.
+%
+%   fh = MA2025.FIGSTYLE(name)          % default 560 x 420 px
+%   fh = MA2025.FIGSTYLE(name, w, h)
+%
+%   Keeps every reproduction figure on one visual system so they can be
+%   dropped into a report side by side with the paper's own plots.
+
+arguments
+    name (1,:) char
+    w    (1,1) double = 620
+    h    (1,1) double = 460
+end
+
+fh = figure('Name', name, 'NumberTitle', 'off', 'Color', 'w', ...
+            'Position', [100 100 w h]);
+
+% R2025a+ themes figures dark by default in some sessions, which exports
+% black-on-black axes.  Pin the light theme so the PNGs are report-ready.
+try
+    theme(fh, 'light');
+catch
+    % older release: no theme() -- the explicit colours below suffice
+end
+
+set(fh, 'Color', 'w', ...
+        'DefaultAxesFontName', 'Helvetica', ...
+        'DefaultAxesFontSize', 11, ...
+        'DefaultAxesColor', 'w', ...
+        'DefaultAxesXColor', [0.15 0.15 0.15], ...
+        'DefaultAxesYColor', [0.15 0.15 0.15], ...
+        'DefaultAxesGridColor', [0.15 0.15 0.15], ...
+        'DefaultTextColor', [0.10 0.10 0.10], ...
+        'DefaultAxesBox', 'on', ...
+        'DefaultAxesXGrid', 'on', 'DefaultAxesYGrid', 'on', ...
+        'DefaultAxesGridAlpha', 0.15, ...
+        'DefaultLineLineWidth', 1.3);
+end

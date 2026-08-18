@@ -24,6 +24,11 @@ This file is the index; new decisions get the next `D-###` and a line here.
 | [D-016](docs/decisions/D-016-qos-adaptive-cacc.md) | Novel extension: QoS-aware CACC — online ρ̂ estimation, timestamp feedforward predictor, fixed-gain headway adaptation; ρ* wall, predictor flatline, noise×delay interaction | research | 2026-07-07 |
 | [D-017](docs/decisions/D-017-online-gain-retuning.md) | Online gain re-tuning (90 %-of-ceiling rule) breaks the fixed-gain wall — ρ=2 zone stabilized (in-force ‖H̃‖∞ 1.019 → 0.99999) | research | 2026-07-07 |
 | [D-018](docs/decisions/D-018-certification-harness.md) | Monte-Carlo certification harness: scenario×seed matrix → self-contained HTML PASS/FAIL report (first full run CERTIFIED) | product | 2026-07-07 |
+| [D-020](docs/decisions/D-020-gazebo-kinematic-renderer.md) | Gazebo 3-D view as a kinematic renderer driven by the certified core (no physics duplication) | demo | 2026-07-09 |
+| [D-021](docs/decisions/D-021-predictive-qos-map.md) | Flagship A: predictive QoS map — spatial ρ(x) preview drives headway *before* the platoon enters the zone | research | 2026-07-14 |
+| [D-022](docs/decisions/D-022-physics-consistency-v2v-gate.md) | Flagship B: physics-consistency V2V gate — radar-vs-beacon trust weight g ∈ [0,1] de-rates spoofed feedforward | research | 2026-07-14 |
+| [D-023](docs/decisions/D-023-chance-constrained-certificate.md) | Flagship C: chance-constrained risk certificate — exact channel law → h_cc(ε); two-tailed instability finding | research | 2026-07-14 |
+| [D-024](docs/decisions/D-024-simulink-backend.md) | MATLAB/Simulink third backend: programmatically-built vectorised model reproduces Figs. 4–15; agrees with the Python core to 1e-4 | architecture | 2026-08-18 |
 
 Docs are numbered serially (`01_Proposal` … `10_Handoff_Plan`); the
 cross-validation results the decisions refer to are in

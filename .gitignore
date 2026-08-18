@@ -30,3 +30,9 @@ report/*.fls
 # OS / editor noise
 Thumbs.db
 .DS_Store
+
+# MATLAB/Simulink build artefacts
+matlab/slprj/
+matlab/*.slxc
+matlab/**/*.autosave
+matlab/**/*.asv

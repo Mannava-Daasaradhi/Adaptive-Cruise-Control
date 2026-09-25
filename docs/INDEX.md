@@ -1,6 +1,11 @@
 # Documentation index
 
-**Start here:** `MASTER_SYSTEM_EXPLAINER.md` (plain-English tour of all
+**Using the product (evaluate your own controller):**
+`product/P-05-user-guide-evaluate-your-controller.md` → why this product
+and for which industry: `product/P-04-industry-and-product-strategy.md` →
+design record: `decisions/D-025-product-core-bring-your-own-controller.md`.
+
+**Start here (the research platform):** `MASTER_SYSTEM_EXPLAINER.md` (plain-English tour of all
 10 systems, how they talk to each other, and the base-paper deltas) →
 `../10_Handoff_Plan.md` (the execution plan) →
 `../09_QoS_Adaptive_CACC.md` (the novel contribution) →
@@ -19,7 +24,9 @@ methodology (D-006…D-008) · theory findings (D-009, D-010) · ROS
 architecture & environment (D-011, D-012) · real-time correctness
 (D-013, D-014) · visualization (D-015) · **QoS-adaptive pipeline
 (D-016)** · **gain re-tuning (D-017)** · **certification harness
-(D-018)**.
+(D-018)** · Gazebo renderer (D-020) · flagship A/B/C (D-021…D-023) ·
+Simulink backend (D-024) · **product core: plugins, test plans, black-box
+string stability (D-025)**.
 
 ## Theory (`theory/`)
 | doc | contents |
@@ -66,7 +73,9 @@ V-03 cross-backend protocol + reference numbers · V-04 limitations
 register (the honesty ledger).
 
 ## Product (`product/`)
-P-01 vision · P-02 the hardware-replacement argument · P-03 roadmap.
+P-01 vision · P-02 the hardware-replacement argument · P-03 roadmap ·
+**P-04 industry & product strategy** (which market, what product, what
+next) · **P-05 user guide** (evaluate your controller with `cacc`).
 
 ## Provenance rule
 Every number quoted anywhere in this tree traces to a

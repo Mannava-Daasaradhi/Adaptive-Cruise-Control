@@ -143,8 +143,30 @@ class CTHP:
         return np.empty(0)
 
 
-def make_controller(kind: str, params: ControllerParams):
-    """Factory: ``kind`` is ``'acc'``, ``'cacc'`` or ``'cthp'``."""
+BUILTIN_KINDS = ("acc", "cacc", "cthp")
+
+
+def is_plugin_kind(kind: str) -> bool:
+    """True for a plugin reference (``'pkg.mod:Class'`` / ``'file.py:Class'``)."""
+    return ":" in kind
+
+
+def make_controller(kind: str, params: ControllerParams,
+                    options: dict | None = None):
+    """Factory for one follower's controller.
+
+    ``kind`` is a built-in (``'acc'``, ``'cacc'``, ``'cthp'``) or a plugin
+    reference ``'package.module:Name'`` / ``'path/to/file.py:Name'`` naming
+    a class or factory called as ``Name(params, **options)``. Plugins follow
+    the :class:`cacc.plugins.LongitudinalController` protocol and are
+    validated on load (D-025).
+    """
+    if is_plugin_kind(kind):
+        from cacc.plugins import load_plugin_controller
+
+        return load_plugin_controller(kind, params, options or {})
+    if options:
+        raise ValueError(f"built-in controller {kind!r} takes no options")
     kind = kind.lower()
     if kind == "acc":
         return ACC(params)
@@ -152,5 +174,5 @@ def make_controller(kind: str, params: ControllerParams):
         return CACC(params)
     if kind == "cthp":
         return CTHP(params)
-    raise ValueError(f"unknown controller kind: {kind!r} "
-                     "(expected 'acc', 'cacc' or 'cthp')")
+    raise ValueError(f"unknown controller kind: {kind!r} (expected 'acc', "
+                     "'cacc', 'cthp' or a plugin 'module:Name')")

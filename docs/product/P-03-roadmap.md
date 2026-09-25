@@ -4,6 +4,13 @@ Near-term items carry acceptance criteria; far-term items carry intent.
 Workstreams A–C of `10_Handoff_Plan.md` remain the active plan; this doc
 is the horizon beyond them.
 
+> **Update 2026-09-25 (D-025).** The product direction is now set in
+> **P-04** (industry & product strategy): validation tooling for
+> longitudinal ADAS/V2X controllers. Its roadmap (P-04 §6 — customer
+> discovery, OpenACC real-data credibility, FMU import, standards-shaped
+> plans, speed) takes priority over the research items below. Item 7 (CI
+> pipeline) is **done** (`.github/workflows/ci.yml`).
+
 ## Now (in the handoff plan)
 - **A: ROS 2 QoS pipeline** — the full estimate/predict/adapt loop
   distributed; acceptance bands in 10 §3 A6 + V-03 extension.

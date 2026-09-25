@@ -15,13 +15,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Callable
 
 import numpy as np
-import yaml
 
-from cacc.controllers import ControllerParams, make_controller
+from cacc.controllers import ControllerParams, is_plugin_kind, make_controller
 from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
 from cacc.network import LinkAttack, V2VLink
@@ -97,9 +95,12 @@ class PlatoonSim:
     config:
         Platoon, vehicle, controller, network and integration settings.
     controller:
-        ``'acc'`` or ``'cacc'``.
+        ``'acc'``, ``'cacc'``, ``'cthp'`` or a plugin reference
+        ``'module:Name'`` / ``'file.py:Name'`` (D-025).
     leader_accel:
         Leader acceleration profile ``a0(t)`` [m/s^2]; default: constant cruise.
+    controller_options:
+        Keyword arguments for a plugin controller's constructor.
     """
 
     def __init__(
@@ -107,15 +108,19 @@ class PlatoonSim:
         config: PlatoonConfig,
         controller: str = "cacc",
         leader_accel: Callable[[float], float] | None = None,
+        controller_options: dict | None = None,
     ):
         self.cfg = config
-        self.kind = controller.lower()
+        self.kind = controller if is_plugin_kind(controller) else controller.lower()
         self.leader_accel = leader_accel or (lambda t: 0.0)
         n = config.n_followers
         if n < 1:
             raise ValueError("need at least one follower")
-        self.ctrls = [make_controller(self.kind, config.control) for _ in range(n)]
+        self.ctrls = [make_controller(self.kind, config.control, controller_options)
+                      for _ in range(n)]
         self.nc = self.ctrls[0].n_states
+        # plugins may ask for the raw measurements (gap, v, a, t) — D-025
+        self._raw = bool(getattr(self.ctrls[0], "raw_inputs", False))
         # spatial channel map (D-021): drive each link's rho from where that
         # link physically is (follower i trails the leader), so a patch is
         # entered later down the string; also exposes a position preview
@@ -198,11 +203,10 @@ class PlatoonSim:
     def initial_state(self) -> np.ndarray:
         """Steady cruise at v0 with exact desired spacing (all errors zero)."""
         cfg = self.cfg
-        c, veh = cfg.control, cfg.vehicle
         x = np.zeros(self.n_states)
         x[0] = 0.0  # leader position
         x[1] = cfg.v0
-        gap = c.r + c.h * cfg.v0 + veh.length
+        gap = self._pitch(cfg.v0)
         for i in range(cfg.n_followers):
             b = 2 + i * self.block
             x[b + 0] = -(i + 1) * gap  # p_i
@@ -210,6 +214,17 @@ class PlatoonSim:
             x[b + 2] = 0.0  # a_i
             # controller states (CACC xi) start at 0 = steady-state input
         return x
+
+    def _pitch(self, v: float) -> float:
+        """Front-to-front equilibrium spacing at speed ``v`` [m].
+
+        A plugin's own ``equilibrium_gap(v)`` wins over the scenario policy
+        ``r + h*v`` so the platoon starts in the law's true equilibrium.
+        """
+        eq = getattr(self.ctrls[0], "equilibrium_gap", None)
+        c = self.cfg.control
+        gap = float(eq(v)) if eq is not None else c.r + c.h * v
+        return gap + self.cfg.vehicle.length
 
     def _link_rho_schedules(self, config: PlatoonConfig, qmap: QoSMap):
         """Per-link rho step schedules from the spatial map (D-021).
@@ -221,8 +236,7 @@ class PlatoonSim:
         patch a vehicle is in, so the nominal trajectory is exact enough.
         """
         n, dt = config.n_followers, config.dt
-        c, veh = config.control, config.vehicle
-        gap0 = c.r + c.h * config.v0 + veh.length
+        gap0 = self._pitch(config.v0)
         tg = np.arange(0.0, config.t_final + dt, dt)
         a0 = np.array([self.leader_accel(float(t)) for t in tg])
         v = config.v0 + np.concatenate(
@@ -269,12 +283,19 @@ class PlatoonSim:
                     self._io_ffinj[i] = u_ff - a_radar
             else:
                 u_ff = 0.0
-            u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv))
+            if self._raw:
+                raw = dict(gap=p_prev - p - veh.length, v=v, a=a, t=t)
+                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv, **raw))
+                if self.nc:
+                    dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(
+                        xc, e, e_dot, u_ff, dv, **raw)
+            else:
+                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv))
+                if self.nc:
+                    dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(xc, e, e_dot, u_ff, dv)
             dx[b] = v
             dx[b + 1] = a
             dx[b + 2] = (u - a) / veh.tau
-            if self.nc:
-                dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(xc, e, e_dot, u_ff, dv)
             self._io_e[i] = e
             self._io_edot[i] = e_dot
             self._io_u[i] = u
@@ -443,32 +464,10 @@ def _with_probe(base: Callable[[float], float], spec: dict) -> Callable[[float],
     return lambda t: base(t) + 0.5 * amp * (np.sin(w1 * t) + np.sin(w2 * t))
 
 
-def load_scenario(path: str | Path) -> Scenario:
-    """Load a YAML scenario file into a :class:`Scenario`."""
-    path = Path(path)
-    with open(path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    net = dict(raw.get("network", {}))
-    if net.get("rho_schedule") is not None:
-        net["rho_schedule"] = tuple(tuple(x) for x in net["rho_schedule"])
-    if net.get("qos_map") is not None:
-        net["qos_map"] = tuple(tuple(x) for x in net["qos_map"])
-    extra: dict = {}
-    if "attack" in raw:  # malicious V2V injection (D-022)
-        extra["attack"] = LinkAttack(**raw["attack"])
-    if "trust" in raw:  # physics-consistency gate (D-022)
-        extra["trust"] = TrustConfig(**raw["trust"])
-    cfg = PlatoonConfig(
-        vehicle=VehicleParams(**raw.get("vehicle", {})),
-        control=ControllerParams(**raw.get("controller", {})),
-        adapt=AdaptConfig(**raw.get("adaptation", {})),
-        **raw.get("platoon", {}),
-        **net,
-        **extra,
-        **raw.get("sim", {}),
-    )
-    leader = make_leader_profile(raw["leader"])
-    name = raw.get("name", path.stem)
-    log.info("loaded scenario %r from %s", name, path)
-    return Scenario(name=name, config=cfg, leader=leader,
-                    description=raw.get("description", ""))
+def __getattr__(name: str):
+    """Backward compatibility: scenario I/O moved to :mod:`cacc.scenario`."""
+    if name in ("load_scenario", "scenario_from_dict", "SCENARIO_BLOCKS"):
+        from cacc import scenario
+
+        return getattr(scenario, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

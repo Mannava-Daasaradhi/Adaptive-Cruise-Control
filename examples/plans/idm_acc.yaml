@@ -1,0 +1,29 @@
+# Bring-your-own-controller example: a commercial-style radar-only ACC.
+#   cacc evaluate examples/plans/idm_acc.yaml -j 4
+name: idm-acc-string-stability
+description: >
+  An IDM-based ACC with a sluggish, commercial-like tuning (T = 1.2 s,
+  a = 0.6 m/s^2, b = 2 m/s^2), supplied as a plugin file. Field campaigns
+  (JRC OpenACC) found every tested commercial ACC string-unstable; the
+  black-box sweep reproduces that failure mode without the controller's
+  transfer function.
+base: ../../scenarios/ma2025_sine.yaml
+under_test:
+  controller: ../controllers/idm_acc.py:IDMACC
+  options: {T: 1.2, a_max: 0.6, b: 2.0}
+seeds: 1
+overrides:
+  platoon.n_followers: 6
+  sim.t_final: 120.0
+  network.noise_rho: null
+cases:
+  - name: sine
+  - name: brake
+    set:
+      leader: {profile: brake, t_start: 10.0, duration: 3.0, decel: -3.0}
+criteria:
+  - "min_gap >= 2.0"
+  - "min_ttc >= 2.0"
+  - "l2_amplification_max <= 1.05"
+string_stability:
+  max_gain: 1.0

@@ -29,6 +29,7 @@ This file is the index; new decisions get the next `D-###` and a line here.
 | [D-022](docs/decisions/D-022-physics-consistency-v2v-gate.md) | Flagship B: physics-consistency V2V gate — radar-vs-beacon trust weight g ∈ [0,1] de-rates spoofed feedforward | research | 2026-07-14 |
 | [D-023](docs/decisions/D-023-chance-constrained-certificate.md) | Flagship C: chance-constrained risk certificate — exact channel law → h_cc(ε); two-tailed instability finding | research | 2026-07-14 |
 | [D-024](docs/decisions/D-024-simulink-backend.md) | MATLAB/Simulink third backend: programmatically-built vectorised model reproduces Figs. 4–15; agrees with the Python core to 1e-4 | architecture | 2026-08-18 |
+| [D-025](docs/decisions/D-025-product-core-bring-your-own-controller.md) | Product core: plugin controllers, YAML test plans, black-box string-stability sweep (matches analytic Γ to 1e-4), JSON/JUnit/Markdown evidence, `cacc` CLI + CI gate | product | 2026-09-25 |
 
 Docs are numbered serially (`01_Proposal` … `10_Handoff_Plan`); the
 cross-validation results the decisions refer to are in

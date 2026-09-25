@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+
+  controller-gate:
+    # The product workflow a customer would copy: evaluate a controller
+    # against a test plan, publish the verdict, keep the evidence.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Release gate (must PASS)
+        run: cacc evaluate examples/plans/smoke.yaml -j 2 -o results/ci/smoke
+      - name: Known-bad controller (must be rejected)
+        run: |
+          set +e
+          cacc evaluate examples/plans/idm_acc.yaml -j 2 -o results/ci/idm_acc
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then
+            echo "expected verdict FAIL (exit 1) for the string-unstable IDM ACC, got exit $code"
+            exit 1
+          fi
+      - name: Publish summaries
+        if: always()
+        run: cat results/ci/*/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: controller-evidence
+          path: results/ci/

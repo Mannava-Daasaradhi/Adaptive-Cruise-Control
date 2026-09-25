@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cacc"
-version = "0.1.0"
-description = "String-stable Cooperative Adaptive Cruise Control platoon simulation (sem-5 control-systems project)"
+dynamic = ["version"]
+description = "String-stability and V2X-robustness test engine for longitudinal vehicle controllers (ACC / CACC / platooning)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,6 +19,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 notebooks = ["jupyterlab", "ipykernel"]
+
+[project.scripts]
+cacc = "cacc.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "cacc.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

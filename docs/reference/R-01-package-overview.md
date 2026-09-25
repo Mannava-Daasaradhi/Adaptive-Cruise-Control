@@ -1,6 +1,6 @@
 # R-01 — `cacc` package overview and dependency map
 
-**Location:** `src/cacc` (v0.3.0) · Python 3.13, NumPy + PyYAML only in
+**Location:** `src/cacc` (v0.4.0) · Python 3.13, NumPy + PyYAML only in
 the core (matplotlib only in scripts). 55-test pytest suite.
 
 ## Module map and allowed dependencies
@@ -16,6 +16,18 @@ the core (matplotlib only in scripts). 55-test pytest suite.
  metrics.py      ── platoon (SimResult) ──► scalar metrics
  logging_config  ── stdlib ───────────────► setup_logging()
  __init__.py     ── re-exports the public API
+
+ product layer (D-025, v0.4.0) — imports only from the list above:
+ plugins.py      ── no deps ──────────────► LongitudinalController protocol,
+                                            'module:Name' / 'file.py:Name' loader
+                                            (controllers.make_controller calls it)
+ scenario.py     ── platoon ──────────────► YAML/dict -> Scenario (moved here)
+ stringstab.py   ── platoon ──────────────► black-box multisine |Γ(jω)| sweep
+ criteria.py     ── metrics, platoon ─────► run metrics + acceptance rules
+ evaluate.py     ── scenario, criteria,
+                    stringstab ───────────► test plans -> report dict
+ reporting.py    ── stdlib + yaml ────────► report.json / junit.xml / summary.md
+ cli.py          ── all product modules ──► the `cacc` command
 ```
 
 Rule: arrows only point downward in this list — e.g. `network` must never
@@ -34,7 +46,10 @@ Analysis: `gamma`, `gamma_magnitude`, `hinf_norm`, `is_string_stable`,
 Adaptation: `AdaptConfig`, `ChannelEstimator`, `HeadwayAdapter`,
 `GainScheduler`.
 Simulation: `PlatoonConfig`, `PlatoonSim`, `SimResult`, `Scenario`,
-`load_scenario`, `make_leader_profile`.
+`load_scenario`, `scenario_from_dict`, `make_leader_profile`.
+Product (D-025): `LongitudinalController` (plugin protocol); the modules
+`cacc.evaluate`, `cacc.stringstab`, `cacc.criteria`, `cacc.reporting` and
+the `cacc` CLI (`cacc.cli:main`) — see P-05.
 Infra: `setup_logging`.
 
 ## Design principles (enforced by review)

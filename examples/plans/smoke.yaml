@@ -1,0 +1,23 @@
+# CI smoke gate: the reproduced Ma-2025 case-A design must stay safe and
+# string-stable at the latencies it is specified for. Runs in well under a
+# minute on a CI runner; exit code 0 = PASS gates the merge.
+#   cacc evaluate examples/plans/smoke.yaml -j 2
+name: smoke
+description: >
+  CTHP case A (h = 0.95 s, rho = 5 channel) at 0 and 100 ms V2V latency:
+  safety margins over two seeds plus the black-box string-stability sweep.
+base: ../../scenarios/ma2025_sine.yaml
+under_test:
+  controller: cthp
+seeds: 2
+overrides:
+  platoon.n_followers: 4
+  sim.t_final: 100.0
+matrix:
+  network.delay: [0.0, 0.1]
+criteria:
+  - "min_gap >= 2.0"
+  - "min_ttc >= 2.0"
+  - "peak_decel <= 3.0"
+string_stability:
+  max_gain: 1.0

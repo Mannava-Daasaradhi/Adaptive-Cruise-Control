@@ -192,3 +192,14 @@ def test_cli_exit_codes(tmp_path):
     scen.write_text(yaml.safe_dump(SCEN))
     assert main(["run", str(scen), "-c", "cacc", "--json"]) == 0
     assert main(["metrics"]) == 0
+
+
+# ------------------------------------------------------------------ scaffold
+def test_init_scaffold_produces_a_valid_project(tmp_path):
+    proj = tmp_path / "acme"
+    assert main(["init", str(proj), "--name", "acme-acc"]) == 0
+    p = load_plan(proj / "plans" / "release_gate.yaml")  # imports the plugin
+    assert p.name == "acme-acc-release-gate" and len(p.cases) == 6
+    assert (proj / ".github" / "workflows" / "controller-gate.yml").is_file()
+    assert main(["init", str(proj)]) == 2  # refuses to overwrite
+    assert main(["init", str(proj), "--force"]) == 0

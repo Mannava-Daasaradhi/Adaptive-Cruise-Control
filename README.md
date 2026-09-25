@@ -17,6 +17,8 @@ pip install -e .                                  # Python >= 3.11, installs the
 cacc evaluate examples/plans/smoke.yaml -j 2      # built-in CTHP design       -> PASS
 cacc evaluate examples/plans/idm_acc.yaml -j 2    # commercial-style ACC plugin -> FAIL (string-unstable)
 cacc sweep scenarios/leader_brake.yaml -c acc     # measured |Γ(jω)| per hop
+cacc calibrate examples/data/synthetic_openacc_platoon.csv   # digital twin of each car's ACC from a drive log
+cacc init my-acc                                  # scaffold your own controller project + CI gate
 ```
 
 ## What you get
@@ -28,10 +30,13 @@ cacc sweep scenarios/leader_brake.yaml -c acc     # measured |Γ(jω)| per hop
 | **Black-box string stability** — multisine sweep measures per-hop \|Γ(jω)\| without a transfer function; matches theory to 1e-4 | `src/cacc/stringstab.py` |
 | **Impairment-faithful V2V** — delay, loss, Ma-2025 16-bit multiplicative noise, time-varying/spatial channel quality, spoofing attacks + physics-consistency gate | `src/cacc/network.py`, `trust.py` |
 | **Evidence** — `report.json` (per seed, provenance), `junit.xml`, `summary.md`, resolved `cases/*.yaml`; exit 0/1/2 | `src/cacc/reporting.py` |
-| **CI template** — must-pass gate + must-reject canary | `.github/workflows/ci.yml` |
+| **Digital twin from drive logs** — reads JRC OpenACC or generic CSV logs, fits each car's ACC, reports the time-gap margin to string stability ± uncertainty, a model-free cross-check and a V2V what-if | `src/cacc/twin.py`, `fielddata.py` |
+| **CI template** — must-pass gate + must-reject canary; `cacc init` scaffolds the same for your repo | `.github/workflows/ci.yml`, `src/cacc/scaffold.py` |
 
 User guide: [`docs/product/P-05`](docs/product/P-05-user-guide-evaluate-your-controller.md) ·
-design record: [`D-025`](docs/decisions/D-025-product-core-bring-your-own-controller.md).
+design records: [`D-025`](docs/decisions/D-025-product-core-bring-your-own-controller.md),
+[`D-026`](docs/decisions/D-026-digital-twin-from-drive-logs.md) ·
+go-to-market: [`docs/company/`](docs/company/GTM-01-go-to-market-plan.md).
 
 ## Why trust the verdicts
 

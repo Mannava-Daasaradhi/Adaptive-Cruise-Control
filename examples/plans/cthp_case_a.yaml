@@ -1,0 +1,31 @@
+# Release gate for the reproduced Ma-2025 CTHP design (case A).
+#   cacc evaluate examples/plans/cthp_case_a.yaml -j 4
+name: cthp-case-a-release-gate
+description: >
+  The reproduced Ma-2025 CTHP design (case A, h = 0.95 s) checked for safety,
+  comfort and string stability across V2V latency and two leader maneuvers.
+base: ../../scenarios/ma2025_sine.yaml
+under_test:
+  controller: cthp
+seeds: 3
+overrides:
+  platoon.n_followers: 6
+  sim.t_final: 120.0
+cases:
+  - name: sine
+  - name: hard-brake
+    set:
+      leader: {profile: brake, t_start: 10.0, duration: 3.0, decel: -5.0}
+matrix:
+  network.delay: [0.0, 0.1, 0.2]
+# Safety and comfort in the time domain; string stability in the frequency
+# domain. The time-domain L2 growth ratio is deliberately NOT a criterion
+# here: under rho = 5 channel noise each link's noise realization scatters
+# single-hop ratios by about +/-6 % (noiseless: 0.997 on every hop), so it
+# would judge the noise, not the controller (D-010, D-025).
+criteria:
+  - "min_gap >= 2.0"
+  - "min_ttc >= 2.0"
+  - "peak_decel <= 6.0"
+string_stability:
+  max_gain: 1.0

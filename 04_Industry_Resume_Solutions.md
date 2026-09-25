@@ -26,3 +26,8 @@
 
 ---
 **Sources:** ADAS / controls engineer resume guides (2025–2026); IEEE T-ITS platooning literature.
+
+---
+**Update (2026-09-25):** the researched industry choice, product definition and roadmap are in
+`docs/product/P-04-industry-and-product-strategy.md`; how to use the product is in
+`docs/product/P-05-user-guide-evaluate-your-controller.md`.

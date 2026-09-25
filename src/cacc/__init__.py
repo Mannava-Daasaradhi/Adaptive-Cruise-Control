@@ -1,12 +1,16 @@
-"""cacc — string-stable Cooperative Adaptive Cruise Control platoon simulation.
+"""cacc — string-stability and V2X-robustness test engine for longitudinal
+vehicle controllers (ACC, CACC, platooning).
 
-Sem-5 control-systems project. Base paper: Ma, Pagilla, Darbha, "Selection of
-Time Headway in Connected and Autonomous Vehicle Platoons Under Noisy V2V
-Communication," IEEE Trans. Intelligent Transportation Systems 26(1), 2025.
-Classic foundation: Ploeg et al., IEEE T-ITS 15(2), 2014.
+Bring a controller (built-in or a plugin, :mod:`cacc.plugins`), describe the
+conditions in a test plan (:mod:`cacc.evaluate`), and get a verdict with
+reproducible evidence (:mod:`cacc.reporting`); the black-box frequency sweep
+(:mod:`cacc.stringstab`) measures string stability of controllers whose
+transfer function is unknown. The physics core reproduces Ma, Pagilla &
+Darbha, IEEE T-ITS 26(1), 2025 to its printed digits; classic foundation:
+Ploeg et al., IEEE T-ITS 15(2), 2014.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from cacc.analysis import (
     cthp_gains_feasible,
@@ -34,9 +38,10 @@ from cacc.platoon import (
     PlatoonSim,
     Scenario,
     SimResult,
-    load_scenario,
     make_leader_profile,
 )
+from cacc.plugins import LongitudinalController
+from cacc.scenario import load_scenario, scenario_from_dict
 from cacc.trust import TrustConfig, TrustGate
 from cacc.vehicle import VehicleParams
 
@@ -51,6 +56,7 @@ __all__ = [
     "GainScheduler",
     "HeadwayAdapter",
     "LinkAttack",
+    "LongitudinalController",
     "amp_at",
     "certify_design",
     "chance_headway",
@@ -82,5 +88,6 @@ __all__ = [
     "make_controller",
     "make_leader_profile",
     "min_stable_headway",
+    "scenario_from_dict",
     "setup_logging",
 ]

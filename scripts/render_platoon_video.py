@@ -63,7 +63,7 @@ def load_csv(path: Path) -> dict[int, dict[str, np.ndarray]]:
 
 
 def simulate_scenario(path: Path, controller: str) -> dict[int, dict[str, np.ndarray]]:
-    from cacc.platoon import PlatoonSim, load_scenario
+    from cacc import PlatoonSim, load_scenario
     sc = load_scenario(path)
     res = PlatoonSim(sc.config, controller, sc.leader).run()
     out = {0: {"t": res.t, "p": res.pos[:, 0], "v": res.vel[:, 0],

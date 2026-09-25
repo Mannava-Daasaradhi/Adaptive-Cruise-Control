@@ -155,6 +155,13 @@ numbers are anchored to.
 
 ## 6. Roadmap (next steps, in priority order)
 
+> **Status 2026-09-25 (D-026, v0.5.0).** Step 1: the discovery kit is ready
+> (`docs/company/GTM-02`) — the calls themselves are the founder's next
+> action. Step 2: the pipeline is **built and validated on synthetic ground
+> truth** (`cacc calibrate`, `scripts/openacc_study.py`); running it on the
+> real OpenACC files is blocked only by data access in the build
+> environment. Onboarding (`cacc init`) shipped.
+
 | # | step | why | acceptance |
 |---|---|---|---|
 | 1 | **Customer discovery** — 8–10 conversations with ADAS validation, V2X and platooning engineers | Confirms (or kills) §3 before building §6.3–6.4 | Written notes; the top-3 pains ranked; a decision on ACC-first vs platooning-first |

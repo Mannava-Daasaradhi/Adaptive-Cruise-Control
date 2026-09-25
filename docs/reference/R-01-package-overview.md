@@ -1,6 +1,6 @@
 # R-01 — `cacc` package overview and dependency map
 
-**Location:** `src/cacc` (v0.4.0) · Python 3.13, NumPy + PyYAML only in
+**Location:** `src/cacc` (v0.5.0) · Python 3.13, NumPy + PyYAML only in
 the core (matplotlib only in scripts). 55-test pytest suite.
 
 ## Module map and allowed dependencies
@@ -27,6 +27,9 @@ the core (matplotlib only in scripts). 55-test pytest suite.
  evaluate.py     ── scenario, criteria,
                     stringstab ───────────► test plans -> report dict
  reporting.py    ── stdlib + yaml ────────► report.json / junit.xml / summary.md
+ fielddata.py    ── numpy + csv ──────────► PlatoonLog; OpenACC + generic logs (D-026)
+ twin.py         ── analysis, fielddata ──► linear ACC twin: calibrate, margin, what-if
+ scaffold.py     ── stdlib ───────────────► `cacc init` project templates
  cli.py          ── all product modules ──► the `cacc` command
 ```
 

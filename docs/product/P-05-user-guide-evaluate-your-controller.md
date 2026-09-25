@@ -185,7 +185,51 @@ cacc run results/evaluations/<plan>/<stamp>/cases/<case>.yaml \
     -c <controller> --option key=value --seed <worst_seed>
 ```
 
-## 8. FAQ
+## 8. Digital twin from a drive log (`cacc calibrate`, D-026)
+
+```bash
+cacc calibrate my_platoon.csv -o twins/     # OpenACC layout or the generic format
+```
+
+For every follower with an ACC-engaged stretch (≥ 30 s by default) it fits
+the linear lag ACC `u = k_s (s − s0 − T v) + k_v Δv`, `a' = (u − a)/tau`
+by simulating the follower against the measured leader, and reports:
+
+- the fitted parameters ± standard error and the fit RMSE (gap, speed);
+- the **time-gap margin**: the time gap the car uses minus the smallest one
+  at which its gains are string-stable, ± SE — the verdict
+  (`string-unstable` / `string-stable` / `marginal`, at 2 SE) is taken on it;
+- ‖Γ‖∞ of the twin and a **model-free** Welch estimate from the raw speeds;
+- a **V2V what-if** (`--v2v-ka`, `--v2v-delay`): ‖Γ‖∞ and the smallest
+  string-stable time gap if the car received its predecessor's acceleration.
+
+`-o` writes `twin_<i>_<name>.yaml` scenarios (run them with
+`cacc sweep twin.yaml -c cthp`, or use one as the `base:` of a test plan with
+`under_test: {controller: cthp}` — the twin *is* the CTHP law with `ka = 0`)
+and `calibration.json`. Exit code 1 if any follower is string-unstable.
+
+**Log formats.** OpenACC (JRC, CC BY 4.0): metadata rows, then
+`Time, Speed{i}, IVS{i}, Driver{i}` (vehicle 1 = leader). Generic:
+`time,speed_0..speed_n,gap_1..gap_n[,engaged_1..engaged_n]`. Whole database:
+`python scripts/openacc_study.py path/to/OpenACC -j 4` → per-vehicle table.
+
+**Limits.** Small-signal twin around the log's mean speed; `s0` is an
+intercept; needs the predecessor's measured speed; exclude stop-and-go
+segments from margin claims (see D-026).
+
+## 9. Start a project (`cacc init`)
+
+```bash
+cacc init my-acc && cd my-acc && cacc evaluate plans/release_gate.yaml -j 4
+```
+
+Creates `controllers/my_controller.py` (a working template law),
+`plans/release_gate.yaml` (cases × actuator-lag matrix, safety criteria,
+sweep), `.github/workflows/controller-gate.yml` and a README. The first run
+is green; replace the law and tighten the plan to your spec. Existing files
+are never overwritten without `--force`.
+
+## 10. FAQ
 
 **Why is `l2_amplification_max` not in the CTHP example gate?** Under
 multiplicative channel noise each link's noise realization scatters single-hop
@@ -205,3 +249,4 @@ import is roadmap step 3 in P-04.
 
 ## Revision history
 - 2026-09-25 — created with D-025 (v0.4.0).
+- 2026-09-25 — §8 digital twin from drive logs, §9 `cacc init` (D-026, v0.5.0).

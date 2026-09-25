@@ -3,6 +3,8 @@
     cacc evaluate PLAN.yaml [-o OUT] [-j JOBS]    test plan -> verdict + reports
     cacc sweep SCENARIO.yaml [-c CONTROLLER]      black-box string stability
     cacc run SCENARIO.yaml [-c CONTROLLER] [--seed N]   one run, all metrics
+    cacc calibrate LOG.csv [-o OUT]               digital twin of a real ACC
+    cacc init DIR                                  scaffold a controller project
     cacc metrics                                   list criterion metrics
 
 Exit codes: 0 = pass / stable, 1 = fail / unstable, 2 = error (bad plan,
@@ -114,6 +116,97 @@ def cmd_run(args) -> int:
     return 0
 
 
+def format_twin(r) -> str:
+    """Human-readable block for one calibrated follower."""
+    m, d = r.model, r.to_dict()
+    se = r.se
+    lines = [f"{r.follower}  (behind {r.leader}) · {r.duration_s:.0f} s "
+             f"ACC-engaged in {r.segments} segment(s) · mean speed "
+             f"{r.v_mean:.1f} m/s",
+             "  fitted    " + " · ".join(
+                 f"{p} {getattr(m, p):.4g} ± {se[p]:.2g} {u}"
+                 for p, u in (("k_s", "1/s²"), ("k_v", "1/s"), ("T", "s"),
+                              ("s0", "m"), ("tau", "s"))),
+             f"  fit       gap RMSE {r.gap_rmse:.3g} m · speed RMSE "
+             f"{r.speed_rmse:.3g} m/s"]
+    if r.min_time_gap is None:
+        need = "is string-unstable at every time gap up to 10 s"
+    else:
+        need = (f"needs ≥ {r.min_time_gap:.2f} s (margin {r.margin:+.3f} ± "
+                f"{r.margin_se:.2g} s)")
+    lines.append(f"  verdict   {r.verdict.upper()} — runs at T = {m.T:.2f} s, "
+                 f"{need}; ‖Γ‖∞ = {r.hinf:.4f} at {r.peak_omega:.3f} rad/s")
+    emp = d["empirical"]
+    if emp.get("peak_gain") is not None:
+        lines.append(f"  data      model-free peak speed gain "
+                     f"{emp['peak_gain']:.3f} at {emp['peak_omega_rad_s']:.3f} "
+                     f"rad/s (coherence {emp['coherence']:.2f})")
+    else:
+        lines.append(f"  data      model-free estimate unavailable "
+                     f"({emp.get('note', '')})")
+    w = r.what_if
+    lower = w["min_string_stable_time_gap_s"]
+    lines.append(f"  what-if   V2V feedforward ka = {w['ka']:g} at "
+                 f"{w['delay_s'] * 1000:.0f} ms → ‖Γ‖∞ = {w['hinf']:.4f}"
+                 + (f", string-stable down to T = {lower:.2f} s"
+                    if lower is not None else ", still unstable"))
+    return "\n".join(lines)
+
+
+def cmd_calibrate(args) -> int:
+    from cacc.fielddata import read_log
+    from cacc.twin import calibrate_log
+
+    log_ = read_log(args.log)
+    reports, skipped = calibrate_log(log_, args.min_duration,
+                                     v2v_ka=args.v2v_ka,
+                                     v2v_delay=args.v2v_delay)
+    if args.out:
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        for r in reports:
+            name = "".join(c if c.isalnum() else "_" for c in r.follower)
+            desc = (f"Linear ACC twin of {r.follower} calibrated from "
+                    f"{Path(r.source).name} (verdict: {r.verdict}).")
+            (out / f"twin_{r.hop}_{name}.yaml").write_text(yaml.safe_dump(
+                r.model.scenario(r.v_mean, f"twin-{name}", desc),
+                sort_keys=False), encoding="utf-8")
+        (out / "calibration.json").write_text(json.dumps(
+            {"source": str(args.log), "followers": [r.to_dict() for r in reports],
+             "skipped": skipped}, indent=2, default=float), encoding="utf-8")
+        print(f"twin scenarios + calibration.json written to {out}/",
+              file=sys.stderr)
+    if args.json:
+        print(json.dumps({"source": str(args.log),
+                          "followers": [r.to_dict() for r in reports],
+                          "skipped": skipped}, indent=2, default=float))
+    else:
+        print(f"cacc {cacc.__version__} · {args.log} · {log_.n_vehicles} "
+              f"vehicles · {log_.dt:.3g} s sampling\n")
+        for r in reports:
+            print(format_twin(r) + "\n")
+        for msg in skipped:
+            print(f"skipped: {msg}")
+    if not reports:
+        return 2
+    return 1 if any(r.verdict == "string-unstable" for r in reports) else 0
+
+
+def cmd_init(args) -> int:
+    from cacc.scaffold import scaffold
+
+    try:
+        files = scaffold(args.directory, args.name, args.force)
+    except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    for f in files:
+        print(f"created {f}")
+    print(f"\nnext:  cd {args.directory} && cacc evaluate "
+          "plans/release_gate.yaml -j 4")
+    return 0
+
+
 def cmd_metrics(args) -> int:
     for name, m in METRICS.items():
         better = ">=" if m.worse == "low" else "<="
@@ -154,6 +247,25 @@ def build_parser() -> argparse.ArgumentParser:
             s.add_argument("--max-gain", type=float, default=1.0)
         else:
             s.add_argument("--seed", type=int, default=1)
+
+    c = sub.add_parser("calibrate", help="fit a digital twin of each ACC "
+                       "follower in a drive log (OpenACC or generic CSV)")
+    c.add_argument("log", help="OpenACC CSV or generic log CSV")
+    c.add_argument("-o", "--out", help="write twin scenarios + calibration.json")
+    c.add_argument("--min-duration", type=float, default=30.0,
+                   help="shortest ACC-engaged segment to use [s]")
+    c.add_argument("--v2v-ka", type=float, default=0.5,
+                   help="what-if V2V feedforward gain")
+    c.add_argument("--v2v-delay", type=float, default=0.1,
+                   help="what-if V2V latency [s]")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_calibrate)
+
+    i = sub.add_parser("init", help="scaffold a controller-evaluation project")
+    i.add_argument("directory")
+    i.add_argument("--name", help="project name (default: directory name)")
+    i.add_argument("--force", action="store_true", help="overwrite files")
+    i.set_defaults(fn=cmd_init)
 
     m = sub.add_parser("metrics", help="list the metrics criteria can use")
     m.set_defaults(fn=cmd_metrics)

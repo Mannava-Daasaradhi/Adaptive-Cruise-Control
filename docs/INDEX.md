@@ -3,7 +3,13 @@
 **Using the product (evaluate your own controller):**
 `product/P-05-user-guide-evaluate-your-controller.md` → why this product
 and for which industry: `product/P-04-industry-and-product-strategy.md` →
-design record: `decisions/D-025-product-core-bring-your-own-controller.md`.
+design records: `decisions/D-025-product-core-bring-your-own-controller.md`,
+`decisions/D-026-digital-twin-from-drive-logs.md`.
+
+**Running the company (go-to-market):** `company/GTM-01-go-to-market-plan.md`
+(ICP, wedge offer, pricing hypotheses, 90-day plan, kill criteria) →
+`company/GTM-02-customer-discovery-kit.md` (hypotheses, targets, outreach,
+interview script, call log) → `company/GTM-03-demo-script.md` (5-minute demo).
 
 **Start here (the research platform):** `MASTER_SYSTEM_EXPLAINER.md` (plain-English tour of all
 10 systems, how they talk to each other, and the base-paper deltas) →
@@ -26,7 +32,7 @@ architecture & environment (D-011, D-012) · real-time correctness
 (D-016)** · **gain re-tuning (D-017)** · **certification harness
 (D-018)** · Gazebo renderer (D-020) · flagship A/B/C (D-021…D-023) ·
 Simulink backend (D-024) · **product core: plugins, test plans, black-box
-string stability (D-025)**.
+string stability (D-025)** · **digital twin from drive logs (D-026)**.
 
 ## Theory (`theory/`)
 | doc | contents |

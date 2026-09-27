@@ -224,6 +224,32 @@ and `calibration.json`. Exit code 1 if any follower is string-unstable.
 intercept; needs the predecessor's measured speed; exclude stop-and-go
 segments from margin claims (see D-026).
 
+## 8a. The audit report (`cacc audit`, D-027)
+
+```bash
+cacc audit my_platoon.csv -o audit/        # ~4 s per car
+```
+
+Everything `cacc calibrate -o` writes, plus:
+
+- `report.html` — one self-contained file for the customer (no network
+  needed to open it; prints one car per page): summary verdicts and
+  recommendations, parameters ± SE, fit to the log, |Γ(jω)| with the
+  model-free point, and the V2V grid;
+- **V2V grid** — smallest string-stable time gap for feedforward
+  ka ∈ {0.3, 0.5, 0.8} × latency 0–300 ms, and the **latency budget**: the
+  largest latency at which the car's *current* gap is string-stable;
+- **recommended time gap** — the stability boundary + 2 SE, rounded up to
+  0.1 s;
+- **road test** — five cars tuned like this one, lead brakes 3 m/s² for 3 s:
+  smallest gap and whether it is a collision, as calibrated and at the
+  recommended gap (a statement about the twin, not a crash prediction);
+- `gate_<i>_<car>.yaml` — a release-gate plan per car (cases
+  *as-calibrated* and *recommended-time-gap*, `min_gap ≥ 2 m`, sweep
+  ≤ 1.0): `cacc evaluate audit/gate_1_SedanA.yaml`.
+
+Exit codes as `cacc calibrate`.
+
 ## 9. Start a project (`cacc init`)
 
 ```bash
@@ -257,3 +283,4 @@ import is roadmap step 3 in P-04.
 ## Revision history
 - 2026-09-25 — created with D-025 (v0.4.0).
 - 2026-09-25 — §8 digital twin from drive logs, §9 `cacc init` (D-026, v0.5.0).
+- 2026-09-27 — §8a `cacc audit` report (D-027, v0.6.0); §4 metric notes.

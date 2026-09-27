@@ -20,21 +20,25 @@ That's the JRC OpenACC finding in miniature."*
 ## Step 2 — "One drive log is enough" (90 s)
 
 ```bash
-cacc calibrate examples/data/synthetic_openacc_platoon.csv -o twins/
+cacc audit examples/data/synthetic_openacc_platoon.csv -o audit/   # ~12 s
 ```
 
-Point at SedanA: *"runs at 1.2 s, needs ≥ 2.95 s to be string-stable,
-margin −1.76 s, with uncertainty; the model-free estimate from the raw data
-agrees (1.29)."* Then EV-C: stable, margin +0.58 s. Say: *"This is the file
-format of the JRC OpenACC database — the same command runs on real
-production cars."*
+Open `audit/report.html`. Point at the summary: *"2 of 3 cars amplify
+disturbances; in a line of five, SedanA's tuning ends in a collision under
+a 3 m/s² brake."* Then SedanA's page: *"runs at 1.2 s, needs ≥ 2.95 s,
+margin −1.76 s with uncertainty; the model-free estimate from the raw data
+agrees (1.29 vs the twin's 1.31); at the recommended 3.0 s the same brake
+leaves 48 m."* Say: *"This is the file format of the JRC OpenACC database —
+the same command runs on real production cars, and this report is what the
+audit delivers."*
 
 ## Step 3 — "What would V2V change?" (60 s)
 
-Same output, the `what-if` line: SUV-B becomes string-stable at its current
-gap with V2V feedforward at 100 ms; SedanA improves (1.31 → 1.06) but
-needs 1.67 s. Say: *"This is the controller-level evidence V2X programs are
-missing: what latency buys you, per car."*
+Same report, the V2V grid: SUV-B keeps its 1.5 s gap string-stable with
+feedforward ka = 0.5 up to **824 ms** of latency; SedanA needs ka = 0.8 and
+then only tolerates **47 ms**; stronger feedforward is not always better
+(the EV needs *more* gap at ka = 0.8). Say: *"This is the controller-level
+evidence V2X programs are missing: the latency budget, per car."*
 
 ## Step 4 — "And it gates your CI" (60 s)
 
@@ -49,8 +53,8 @@ evidence is archived — worst seed, exact scenario, git commit."*
 ## Close (30 s)
 
 *"We'd like to run this on two of your vehicles as a 2–4 week audit — you
-send logs, you get twins, margins, and a V2V what-if, and you keep the test
-plan."* Then ask interview questions 10–11 from GTM-02.
+send logs, you get this report for your cars — twins, margins, the V2V
+latency budget — and you keep the release-gate test plans."* Then ask interview questions 10–11 from GTM-02.
 
 ## Backup answers
 

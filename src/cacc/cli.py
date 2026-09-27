@@ -4,6 +4,7 @@
     cacc sweep SCENARIO.yaml [-c CONTROLLER]      black-box string stability
     cacc run SCENARIO.yaml [-c CONTROLLER] [--seed N]   one run, all metrics
     cacc calibrate LOG.csv [-o OUT]               digital twin of a real ACC
+    cacc audit LOG.csv [-o OUT]                   customer audit report (HTML)
     cacc init DIR                                  scaffold a controller project
     cacc metrics                                   list criterion metrics
 
@@ -155,6 +156,7 @@ def format_twin(r) -> str:
 
 
 def cmd_calibrate(args) -> int:
+    from cacc.audit import write_twins
     from cacc.fielddata import read_log
     from cacc.twin import calibrate_log
 
@@ -164,14 +166,7 @@ def cmd_calibrate(args) -> int:
                                      v2v_delay=args.v2v_delay)
     if args.out:
         out = Path(args.out)
-        out.mkdir(parents=True, exist_ok=True)
-        for r in reports:
-            name = "".join(c if c.isalnum() else "_" for c in r.follower)
-            desc = (f"Linear ACC twin of {r.follower} calibrated from "
-                    f"{Path(r.source).name} (verdict: {r.verdict}).")
-            (out / f"twin_{r.hop}_{name}.yaml").write_text(yaml.safe_dump(
-                r.model.scenario(r.v_mean, f"twin-{name}", desc),
-                sort_keys=False), encoding="utf-8")
+        write_twins(reports, out)
         (out / "calibration.json").write_text(json.dumps(
             {"source": str(args.log), "followers": [r.to_dict() for r in reports],
              "skipped": skipped}, indent=2, default=float), encoding="utf-8")
@@ -191,6 +186,22 @@ def cmd_calibrate(args) -> int:
     if not reports:
         return 2
     return 1 if any(r.verdict == "string-unstable" for r in reports) else 0
+
+
+def cmd_audit(args) -> int:
+    from cacc.audit import audit_log, write_audit
+
+    res = audit_log(args.log, args.min_duration, v2v_ka=args.v2v_ka,
+                    v2v_delay=args.v2v_delay)
+    out = Path(args.out or f"audit_{Path(args.log).stem}")
+    paths = write_audit(res, out)
+    for v in res.vehicles:
+        print(format_twin(v.twin) + "\n")
+    for msg in res.skipped:
+        print(f"skipped: {msg}")
+    print(f"report: {paths['report']}  (+ calibration.json, twin_*.yaml, "
+          f"gate_*.yaml in {out}/)")
+    return res.exit_code
 
 
 def cmd_init(args) -> int:
@@ -261,6 +272,19 @@ def build_parser() -> argparse.ArgumentParser:
                    help="what-if V2V latency [s]")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_calibrate)
+
+    a = sub.add_parser("audit", help="drive log -> String-Stability Audit "
+                       "report (HTML) + twins + release gates")
+    a.add_argument("log", help="OpenACC CSV or generic platoon log")
+    a.add_argument("-o", "--out", help="output directory "
+                   "(default: audit_<log name>)")
+    a.add_argument("--min-duration", type=float, default=30.0,
+                   help="shortest ACC-engaged segment to use [s]")
+    a.add_argument("--v2v-ka", type=float, default=0.5,
+                   help="V2V feedforward gain drawn in the gain chart")
+    a.add_argument("--v2v-delay", type=float, default=0.1,
+                   help="V2V latency drawn in the gain chart [s]")
+    a.set_defaults(fn=cmd_audit)
 
     i = sub.add_parser("init", help="scaffold a controller-evaluation project")
     i.add_argument("directory")

@@ -29,6 +29,7 @@ the core (matplotlib only in scripts). 55-test pytest suite.
  reporting.py    ── stdlib + yaml ────────► report.json / junit.xml / summary.md
  fielddata.py    ── numpy + csv ──────────► PlatoonLog; OpenACC + generic logs (D-026)
  twin.py         ── analysis, fielddata ──► linear ACC twin: calibrate, margin, what-if
+ audit.py        ── twin, scenario, platoon► `cacc audit`: HTML report, V2V grid, gates (D-027)
  scaffold.py     ── stdlib ───────────────► `cacc init` project templates
  cli.py          ── all product modules ──► the `cacc` command
 ```

@@ -10,7 +10,7 @@ Darbha, IEEE T-ITS 26(1), 2025 to its printed digits; classic foundation:
 Ploeg et al., IEEE T-ITS 15(2), 2014.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from cacc.analysis import (
     cthp_gains_feasible,

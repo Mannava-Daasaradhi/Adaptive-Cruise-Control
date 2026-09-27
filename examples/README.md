@@ -13,6 +13,7 @@ pip install -e .
 cacc evaluate examples/plans/smoke.yaml -j 2
 cacc evaluate examples/plans/idm_acc.yaml -j 2
 cacc calibrate examples/data/synthetic_openacc_platoon.csv -o twins/
+cacc audit examples/data/synthetic_openacc_platoon.csv -o audit/   # open audit/report.html
 ```
 
 Guide: `docs/product/P-05-user-guide-evaluate-your-controller.md`.

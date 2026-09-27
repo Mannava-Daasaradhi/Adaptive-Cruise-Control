@@ -44,10 +44,10 @@ jobs:
             echo "expected verdict FAIL (exit 1) for the string-unstable IDM ACC, got exit $code"
             exit 1
           fi
-      - name: Drive-log twin (known-unstable cars must be flagged)
+      - name: Drive-log audit (known-unstable cars must be flagged)
         run: |
           set +e
-          cacc calibrate examples/data/synthetic_openacc_platoon.csv -o results/ci/twins > results/ci/twins.txt
+          cacc audit examples/data/synthetic_openacc_platoon.csv -o results/ci/audit > results/ci/twins.txt
           code=$?
           set -e
           cat results/ci/twins.txt

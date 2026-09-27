@@ -44,7 +44,7 @@ whole deliverable in seconds (12 s for the three-car sample).
 2. **V2V what-if grid.** For ka ∈ {0.3, 0.5, 0.8} × latency ∈ {0, 50, 100,
    200, 300} ms, the smallest string-stable time gap. Also a **latency
    budget** per ka: the largest latency at which the car's *current* gap is
-   string-stable, found by bisection on the twin's exact boundary. This is
+   string-stable, found on the twin's exact boundary (a 10 ms scan to the first failure, then bisection; stability need not be monotonic in latency). This is
    the number a V2X vendor (ICP rank 1) asks for.
 3. **Recommended time gap.** The boundary plus two standard errors of the
    margin, rounded up to 0.1 s.
@@ -54,7 +54,9 @@ whole deliverable in seconds (12 s for the three-car sample).
    recommended gap. It is the twin's own scenario, the one the gate runs.
    A manager reads "car 5 collides" faster than "|Γ| = 1.31".
 5. **`gate_<i>_<car>.yaml`.** A release-gate test plan per car:
-   - cases *as-calibrated* and *recommended-time-gap*;
+   - case *as-calibrated*, plus *recommended-time-gap* when the
+     recommendation is a larger gap than the one in use (a string-stable car
+     gets only the first);
    - `min_gap ≥ 2 m` under the hard brake;
    - the multisine sweep with max gain 1.0.
 

@@ -244,9 +244,9 @@ Everything `cacc calibrate -o` writes, plus:
 - **road test** — five cars tuned like this one, lead brakes 3 m/s² for 3 s:
   smallest gap and whether it is a collision, as calibrated and at the
   recommended gap (a statement about the twin, not a crash prediction);
-- `gate_<i>_<car>.yaml` — a release-gate plan per car (cases
-  *as-calibrated* and *recommended-time-gap*, `min_gap ≥ 2 m`, sweep
-  ≤ 1.0): `cacc evaluate audit/gate_1_SedanA.yaml`.
+- `gate_<i>_<car>.yaml` — a release-gate plan per car (case
+  *as-calibrated*, plus *recommended-time-gap* when that is a larger gap;
+  `min_gap ≥ 2 m`, sweep ≤ 1.0): `cacc evaluate audit/gate_1_SedanA.yaml`.
 
 Exit codes as `cacc calibrate`.
 

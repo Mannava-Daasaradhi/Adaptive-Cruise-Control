@@ -48,6 +48,11 @@ BUDGET_MAX = 1.0
 # the recessive ink used for reference lines and axes
 _BLUE, _ORANGE, _AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 _INK, _MUTED, _GRID = "#0b0b0b", "#52514e", "#e4e3df"
+#: chart literals rewritten to CSS tokens so the charts follow the theme
+_THEME_TOKENS = {_INK: "var(--ink)", _MUTED: "var(--muted)",
+                 _GRID: "var(--line)", _BLUE: "var(--s1)",
+                 _ORANGE: "var(--s2)", _AQUA: "var(--s3)",
+                 "#ffffff": "var(--surface)", "#000000": "var(--ink)"}
 
 
 # ----------------------------------------------------------------- numbers
@@ -295,7 +300,7 @@ def _figure(w: float, h: float, rows: int = 1):
             ax.spines[side].set_visible(False)
         for side in ("left", "bottom"):
             ax.spines[side].set_color(_MUTED)
-        ax.tick_params(colors=_MUTED, labelsize=8)
+        ax.tick_params(which="both", colors=_MUTED, labelsize=8)
         ax.grid(True, color=_GRID, linewidth=0.6)
         ax.set_axisbelow(True)
     return fig, axes
@@ -312,7 +317,10 @@ def _svg(fig) -> str:
                     metadata={"Date": None, "Creator": None, "Format": None,
                               "Type": None})
     s = buf.getvalue()
-    return s[s.index("<svg"):]  # drop the XML prolog; inline in HTML
+    s = s[s.index("<svg"):]  # drop the XML prolog; inline in HTML
+    for literal, token in _THEME_TOKENS.items():
+        s = s.replace(literal, token)
+    return s
 
 
 def _end_labels(ax, x_end: float, items: list[tuple[float, str, str | None]],
@@ -357,7 +365,7 @@ def fit_chart(v: VehicleAudit) -> str:
         ax.plot(t, twin, color=_ORANGE, lw=1.4, label="twin")
         ax.set_ylabel(unit, fontsize=8, color=_MUTED)
     a1.legend(frameon=False, fontsize=8, loc="lower right", ncol=2,
-              bbox_to_anchor=(1.0, 1.0), borderaxespad=0.2)
+              bbox_to_anchor=(1.0, 1.0), borderaxespad=0.2, labelcolor=_INK)
     a2.set_xlabel("time in segment [s]", fontsize=8, color=_MUTED)
     return _svg(fig)
 
@@ -487,29 +495,28 @@ def _grid_table(v: VehicleAudit) -> str:
             + "</tbody></table></div>")
 
 
-def _road_sentence(rt: dict) -> str:
+def _road_sentence(rt: dict, which: str) -> str:
     if rt["collision"]:
         what = (f"<b>car {rt['min_gap_car']} collides</b> (smallest gap "
                 f"{rt['min_gap_m']:.1f} m)")
     else:
         what = (f"the smallest gap is {rt['min_gap_m']:.1f} m "
                 f"(car {rt['min_gap_car']})")
-    return (f"at a {rt['time_gap_s']:.2f} s time gap, {what}; hardest braking "
-            f"{rt['peak_decel_mps2']:.1f} m/s²")
+    return (f"At the {which} {rt['time_gap_s']:.2f} s time gap, {what}; "
+            f"hardest braking {rt['peak_decel_mps2']:.1f} m/s².")
 
 
 def _road_html(v: VehicleAudit) -> str:
     if not v.road:
         return ""
     rt = v.road["as_calibrated"]
-    parts = [_road_sentence(rt)]
+    parts = [_road_sentence(rt, "current")]
     if "recommended" in v.road:
-        parts.append(_road_sentence(v.road["recommended"]))
+        parts.append(_road_sentence(v.road["recommended"], "recommended"))
     return (f'<p class="note"><b>On the road.</b> {rt["cars"]} cars tuned like '
             f"this one; the lead car brakes at {rt['brake_mps2']:g} m/s² for "
             f"{rt['brake_s']:g} s from {rt['v0_mps']:.1f} m/s. "
-            + ". With the recommendation: ".join(p[0].upper() + p[1:]
-                                                 for p in parts) + ".</p>")
+            + " ".join(parts) + "</p>")
 
 
 _PARAM_DOC = (("k_s", "1/s²", "gap-error gain"), ("k_v", "1/s",
@@ -575,8 +582,20 @@ def _vehicle_section(v: VehicleAudit) -> str:
 
 _CSS = """
 :root { color-scheme: light; --ink:#0b0b0b; --muted:#52514e; --line:#e4e3df;
-  --surface:#fcfcfb; --panel:#f4f3f0; --good:#0ca30c; --warning:#fab219;
-  --critical:#d03b3b; }
+  --surface:#fcfcfb; --panel:#f4f3f0; --ok-bg:#eaf6ea;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --good-ink:#067a06; --critical-ink:#b02e2e; --warning-ink:#8a5d00;
+  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; --ink:#f2f1ec; --muted:#c3c2b7; --line:#3a3936;
+  --surface:#1a1a19; --panel:#262624; --ok-bg:#1f3a1f;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --good-ink:#5fd35f; --critical-ink:#f08a8a; --warning-ink:#f5c040; }
+}
+:root[data-theme="dark"] { color-scheme: dark; --ink:#f2f1ec; --muted:#c3c2b7; --line:#3a3936;
+  --surface:#1a1a19; --panel:#262624; --ok-bg:#1f3a1f;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --good-ink:#5fd35f; --critical-ink:#f08a8a; --warning-ink:#f5c040; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface); color: var(--ink);
   font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
@@ -596,13 +615,13 @@ th, td { border-bottom: 1px solid var(--line); padding: 5px 8px;
 thead th { color: var(--muted); font-weight: 600; }
 .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .grid td { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.grid td.ok { background: #eaf6ea; }
+.grid td.ok { background: var(--ok-bg); }
 .grid td.na { color: var(--muted); }
 .badge { font-size: 12px; font-weight: 600; padding: 2px 8px;
   border-radius: 999px; border: 1.5px solid; white-space: nowrap; }
-.badge.good { border-color: var(--good); color: #067a06; }
-.badge.critical { border-color: var(--critical); color: #b02e2e; }
-.badge.warning { border-color: var(--warning); color: #8a5d00; }
+.badge.good { border-color: var(--good); color: var(--good-ink); }
+.badge.critical { border-color: var(--critical); color: var(--critical-ink); }
+.badge.warning { border-color: var(--warning); color: var(--warning-ink); }
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px; margin: 8px 0 12px; }
 .kpis div { background: var(--panel); border-radius: 8px; padding: 8px 10px;
@@ -613,6 +632,7 @@ thead th { color: var(--muted); font-weight: 600; }
   padding: 8px 12px; border-radius: 4px; }
 figure { margin: 6px 0 12px; overflow-x: auto; }
 figure svg { max-width: 100%; height: auto; }
+figure svg text { fill: var(--ink); }  /* chart text without its own fill */
 section.vehicle { border-top: 2px solid var(--ink); margin-top: 36px;
   padding-top: 16px; }
 .scroll { overflow-x: auto; }
@@ -623,6 +643,10 @@ code { font-size: 12px; background: var(--panel); padding: 1px 4px;
   figure svg { min-width: 560px; max-width: none; }  /* scroll, stay legible */
 }
 @media print {
+  :root:not([data-theme="print"]) { color-scheme: light; --ink:#0b0b0b; --muted:#52514e; --line:#e4e3df;
+  --surface:#fcfcfb; --panel:#f4f3f0; --ok-bg:#eaf6ea;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --good-ink:#067a06; --critical-ink:#b02e2e; --warning-ink:#8a5d00; }
   body { background: white; }
   main { padding: 0; max-width: none; }
   section.vehicle { break-before: page; }

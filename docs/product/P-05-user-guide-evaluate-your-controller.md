@@ -130,6 +130,13 @@ records which seed produced it.
 | `peak_jerk` | m/s³ | largest \|da/dt\| (comfort) | `<=` |
 | `rms_accel` | m/s² | largest per-follower RMS acceleration (comfort/energy proxy) | `<=` |
 
+`peak_spacing_error` is measured against the *scenario* policy `r + h·v`.
+A plugin with its own `equilibrium_gap` starts (correctly) in its own
+equilibrium, so the metric then includes the constant offset between the two
+policies: set the scenario's `controller.r` / `controller.h` to match the law,
+or gate on `min_gap` / `min_time_gap` instead. `l2_amplification_max` compares
+followers and is rejected at load time when a case has fewer than two.
+
 ## 5. The string-stability sweep
 
 String stability means a disturbance does not grow down the platoon:

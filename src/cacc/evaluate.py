@@ -206,11 +206,17 @@ def plan_from_dict(raw: dict, root: Path = Path("."),
             if params:
                 label += "[" + ",".join(f"{k}={v}" for k, v in params.items()) + "]"
             cases.append(Case(label, tree, params))
+    if not cases:
+        raise PlanError("the plan has no cases (an empty matrix axis?)")
+    needs_pair = any(c.metric == "l2_amplification_max" for c in criteria)
     for case in cases:  # build once now so a bad case fails before any run
         try:
             sc = scenario_from_dict(case.raw, default_name=case.name)
         except (ValueError, TypeError, KeyError) as exc:
             raise PlanError(f"case {case.name!r}: {exc}") from None
+        if needs_pair and sc.config.n_followers < 2:
+            raise PlanError(f"case {case.name!r}: l2_amplification_max "
+                            "compares followers and needs n_followers >= 2")
     try:  # import + contract-check the controller before any run
         make_controller(controller, sc.config.control, options)
     except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:

@@ -121,6 +121,15 @@ class PlatoonSim:
         self.nc = self.ctrls[0].n_states
         # plugins may ask for the raw measurements (gap, v, a, t) — D-025
         self._raw = bool(getattr(self.ctrls[0], "raw_inputs", False))
+        # the simulator reads these once, from the first follower's law
+        def shape(c):
+            return (c.n_states, bool(getattr(c, "raw_inputs", False)),
+                    c.uses_v2v, c.ff_signal)
+        if any(shape(c) != shape(self.ctrls[0]) for c in self.ctrls[1:]):
+            raise ValueError(
+                f"controller {controller!r} built followers that disagree on "
+                "n_states / raw_inputs / uses_v2v / ff_signal; every follower "
+                "must run the same kind of law")
         # spatial channel map (D-021): drive each link's rho from where that
         # link physically is (follower i trails the leader), so a patch is
         # entered later down the string; also exposes a position preview

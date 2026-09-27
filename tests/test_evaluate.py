@@ -109,6 +109,9 @@ def test_cases_times_matrix_expansion_and_names():
      "takes no options"),
     (dict(under_test={"controller": "missing.py:X"}), "under_test"),
     (dict(under_test={"controller": "cacc.controllers:Nope"}), "no attribute"),
+    (dict(overrides={"platoon.n_followers": 1},
+          criteria=["l2_amplification_max <= 1.05"]), "n_followers >= 2"),
+    (dict(matrix={"network.delay": []}), "no cases"),
 ])
 def test_plan_errors_are_specific(kw, msg):
     with pytest.raises(PlanError, match=msg):
@@ -192,6 +195,24 @@ def test_cli_exit_codes(tmp_path):
     scen.write_text(yaml.safe_dump(SCEN))
     assert main(["run", str(scen), "-c", "cacc", "--json"]) == 0
     assert main(["metrics"]) == 0
+
+
+def test_cli_controller_crash_is_error_not_fail(tmp_path, capsys):
+    # exit 1 means "the controller failed the check"; a crash must never be
+    # read that way by a CI gate
+    bad = tmp_path / "bad.py"
+    bad.write_text("import numpy as np\n"
+                   "class Boom:\n"
+                   "    n_states = 0\n    uses_v2v = False\n"
+                   "    ff_signal = 'a'\n"
+                   "    def __init__(self, params): pass\n"
+                   "    def output(self, *a, **k): raise RuntimeError('boom')\n"
+                   "    def deriv(self, *a, **k): return np.empty(0)\n")
+    scen = tmp_path / "s.yaml"
+    scen.write_text(yaml.safe_dump(SCEN))
+    for cmd in ("sweep", "run"):
+        assert main([cmd, str(scen), "-c", f"{bad}:Boom"]) == 2
+        assert "RuntimeError: boom" in capsys.readouterr().err
 
 
 # ------------------------------------------------------------------ scaffold

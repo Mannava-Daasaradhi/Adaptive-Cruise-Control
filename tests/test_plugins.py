@@ -118,6 +118,30 @@ def test_bad_references(ref, exc):
         make_controller(ref, ControllerParams())
 
 
+def test_followers_must_run_the_same_kind_of_law(tmp_path):
+    # a factory that alternates classes would silently corrupt the state
+    # layout (n_states is read from the first follower only)
+    f = tmp_path / "mixed.py"
+    f.write_text(textwrap.dedent('''
+        import numpy as np
+        class A:
+            n_states = 0
+            uses_v2v = False
+            ff_signal = "a"
+            def __init__(self, params): pass
+            def output(self, xc, e, e_dot, u_ff, dv=0.0): return 0.1 * e
+            def deriv(self, xc, e, e_dot, u_ff, dv=0.0): return np.zeros(self.n_states)
+        class B(A):
+            n_states = 1
+        _count = [0]
+        def Mixed(params):
+            _count[0] += 1
+            return (A if _count[0] % 2 else B)(params)
+    '''))
+    with pytest.raises(ValueError, match="same kind of law"):
+        PlatoonSim(CASE_A, f"{f}:Mixed")
+
+
 def test_builtin_rejects_options():
     with pytest.raises(ValueError, match="takes no options"):
         make_controller("cthp", ControllerParams(), {"x": 1})

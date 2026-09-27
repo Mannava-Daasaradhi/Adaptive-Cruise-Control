@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import sys
+import traceback
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -277,8 +278,13 @@ def main(argv: list[str] | None = None) -> int:
     _logging(args.verbose)
     try:
         return args.fn(args)
-    except (ValueError, TypeError, FileNotFoundError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 — a crash is ERROR (2), never FAIL (1)
+        if args.verbose:
+            traceback.print_exc()
+        # expected input problems read as-is; anything else names its type
+        msg = (str(exc) if isinstance(exc, (ValueError, OSError))
+               else f"{type(exc).__name__}: {exc}")
+        print(f"error: {msg}", file=sys.stderr)
         return 2
 
 

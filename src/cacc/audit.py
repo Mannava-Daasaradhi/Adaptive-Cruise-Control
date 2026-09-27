@@ -72,14 +72,18 @@ def v2v_grid(model, kas=KA_GRID, latencies=LATENCY_GRID) -> list[dict]:
 
 
 def latency_budget(model, ka: float, time_gap: float | None = None,
-                   ceiling: float = BUDGET_MAX, tol: float = 0.002
-                   ) -> float | None:
-    """Largest V2V latency [s] at which feedforward ``ka`` keeps the car
-    string-stable at ``time_gap`` (default: the gap it uses).
+                   ceiling: float = BUDGET_MAX, scan: float = 0.01,
+                   tol: float = 0.001) -> float | None:
+    """Largest V2V latency [s] up to which feedforward ``ka`` keeps the car
+    string-stable at ``time_gap`` (default: the gap it uses) — every
+    latency from 0 to the budget is stable.
 
     ``None`` if not even a zero-latency link suffices; ``ceiling`` if the
-    whole searched range does. Bisection assumes the required time gap grows
-    with latency, which holds for the lag-ACC twin.
+    whole searched range does. Stability need not be monotonic in latency
+    (the delayed feedforward's phase rotates), so the first failure is found
+    by a ``scan``-step sweep and then refined by bisection; a stable window
+    beyond the first failure is deliberately not counted. Rounded down to
+    1 ms so the reported budget is never past the boundary.
     """
     T = model.T if time_gap is None else time_gap
 
@@ -89,13 +93,17 @@ def latency_budget(model, ka: float, time_gap: float | None = None,
 
     if not ok(0.0):
         return None
-    if ok(ceiling):
+    lo = 0.0
+    for hi in np.append(np.arange(scan, ceiling, scan), ceiling):
+        if not ok(float(hi)):
+            break
+        lo = float(hi)
+    else:
         return ceiling
-    lo, hi = 0.0, ceiling
     while hi - lo > tol:
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if ok(mid) else (lo, mid)
-    return round(lo, 3)
+    return math.floor(lo * 1000) / 1000
 
 
 def recommended_time_gap(r: TwinReport, step: float = 0.1) -> float | None:
@@ -279,8 +287,11 @@ def write_audit(res: AuditResult, out: str | Path) -> dict[str, Path]:
         gate = out / f"gate_{_car_file_stem(v.twin)}.yaml"
         gate.write_text(yaml.safe_dump(release_gate(v, twin_path.name),
                                        sort_keys=False), encoding="utf-8")
-        paths[f"gate:{v.twin.follower}"] = gate
-        paths[f"twin:{v.twin.follower}"] = twin_path
+        key = v.twin.follower
+        if f"gate:{key}" in paths:  # two cars with the same name in one log
+            key = f"{v.twin.hop}:{key}"
+        paths[f"gate:{key}"] = gate
+        paths[f"twin:{key}"] = twin_path
     paths["calibration"].write_text(json.dumps(
         {"meta": res.meta, "source": res.source,
          "followers": [v.to_dict() for v in res.vehicles],
@@ -749,7 +760,7 @@ log file identified below. Files next to this report: <code>calibration.json</co
 <code>gate_*.yaml</code> (release-gate test plans:
 <code>cacc evaluate gate_….yaml</code>).</p>
 <table><tbody>
-<tr><td>command</td><td><code>cacc audit {_e(meta['log_file'])} --min-duration
+<tr><td>command</td><td><code>cacc audit {_e(res.source)} --min-duration
   {meta['min_duration_s']:g} --v2v-ka {meta['what_if']['ka']:g} --v2v-delay
   {meta['what_if']['delay_s']:g}</code></td></tr>
 <tr><td>log SHA-256</td><td><code>{_e(meta['log_sha256'])}</code></td></tr>

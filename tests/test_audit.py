@@ -62,6 +62,19 @@ def test_latency_budget_is_the_stability_boundary():
     assert latency_budget(STABLE, 0.3) == BUDGET_MAX
 
 
+def test_latency_budget_stops_at_the_first_failure():
+    # stability that returns at higher latency must not extend the budget:
+    # a link is only safe if every latency up to the budget is
+    class Islands:
+        T = 1.0
+
+        def min_stable_time_gap(self, ka, theta):
+            return 0.5 if theta < 0.1234 or theta >= 0.3 else 2.0
+
+    b = latency_budget(Islands(), 0.5)
+    assert 0.122 <= b <= 0.1234  # floored to 1 ms, never past the boundary
+
+
 def test_grid_covers_every_pair_and_matches_the_model():
     rows = v2v_grid(UNSTABLE)
     assert len(rows) == len(KA_GRID) * len(LATENCY_GRID)
@@ -106,9 +119,19 @@ def test_audit_writes_report_json_twins_and_gates(audited):
         assert paths[f"gate:{car}"].is_file() and paths[f"twin:{car}"].is_file()
 
 
+def test_duplicate_vehicle_names_keep_separate_outputs(tmp_path):
+    log = synthesize_log([UNSTABLE, STABLE], T10, perturbed_leader(T10),
+                         ["Lead", "Car", "Car"], seed=5)
+    write_openacc(log, tmp_path / "dup.csv")
+    paths = write_audit(audit_log(tmp_path / "dup.csv"), tmp_path / "out")
+    assert paths["gate:Car"] != paths["gate:2:Car"]
+    assert paths["twin:Car"].is_file() and paths["twin:2:Car"].is_file()
+
+
 def test_report_is_self_contained_and_escapes_log_content(audited):
     res, paths = audited
     html = paths["report"].read_text()
+    assert f"cacc audit {res.source} " in html  # the command as it was run
     assert html.startswith("<!doctype html>")
     assert "Car&lt;U&gt;" in html and "Car<U>" not in html
     assert html.count("<svg") == 3 * len(res.vehicles)  # 3 charts per car

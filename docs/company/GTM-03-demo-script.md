@@ -34,8 +34,8 @@ audit delivers."*
 
 ## Step 3 — "What would V2V change?" (60 s)
 
-Same report, the V2V grid: SUV-B keeps its 1.5 s gap string-stable with
-feedforward ka = 0.5 up to **824 ms** of latency; SedanA needs ka = 0.8 and
+Same report, the V2V grid: SUVB keeps its 1.5 s gap string-stable with
+feedforward ka = 0.5 up to **825 ms** of latency; SedanA needs ka = 0.8 and
 then only tolerates **47 ms**; stronger feedforward is not always better
 (the EV needs *more* gap at ka = 0.8). Say: *"This is the controller-level
 evidence V2X programs are missing: the latency budget, per car."*

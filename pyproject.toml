@@ -19,9 +19,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 notebooks = ["jupyterlab", "ipykernel"]
+gui = ["PySide6>=6.6"]
+package = ["PySide6>=6.6", "pyinstaller>=6.0"]
 
 [project.scripts]
 cacc = "cacc.cli:main"
+
+[project.gui-scripts]
+cacc-studio = "cacc.gui:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "cacc.__version__"}

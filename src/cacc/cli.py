@@ -7,6 +7,7 @@
     cacc audit LOG.csv [-o OUT]                   customer audit report (HTML)
     cacc init DIR                                  scaffold a controller project
     cacc metrics                                   list criterion metrics
+    cacc gui                                       CACC Studio desktop app
 
 Exit codes: 0 = pass / stable, 1 = fail / unstable, 2 = error (bad plan,
 simulation crash, bad arguments).
@@ -226,6 +227,12 @@ def cmd_metrics(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    from cacc.gui import main as gui_main
+
+    return gui_main([])
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cacc", description="String-stability and V2X-robustness test "
@@ -294,6 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     m = sub.add_parser("metrics", help="list the metrics criteria can use")
     m.set_defaults(fn=cmd_metrics)
+
+    g = sub.add_parser("gui", help="open CACC Studio, the desktop app "
+                       "(needs pip install -e \".[gui]\")")
+    g.set_defaults(fn=cmd_gui)
     return p
 
 

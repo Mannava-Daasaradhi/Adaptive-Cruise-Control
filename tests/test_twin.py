@@ -55,7 +55,7 @@ def test_openacc_round_trip_and_header_detection(tmp_path, mixed_log):
     assert np.allclose(back.speed, mixed_log.speed, atol=1e-4)
     assert not back.engaged[:, 0].any() and back.engaged[:, 1:].all()
     # an extra metadata row must not break the parser (header found by 'Time')
-    lines = p.read_text().splitlines()
+    lines = p.read_text(encoding="utf-8").splitlines()
     p2 = tmp_path / "extra.csv"
     p2.write_text("\n".join(lines[:4] + ["Campaign,X"] + lines[4:]) + "\n")
     assert read_openacc(p2).speed.shape == back.speed.shape

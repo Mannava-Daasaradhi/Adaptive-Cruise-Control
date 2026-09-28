@@ -151,16 +151,16 @@ def test_evaluate_pass_fail_and_worst_seed(tmp_path):
     assert rep["verdict"] == "FAIL" and rep["counts"]["FAIL"] == 1
 
     paths = write_all(rep, tmp_path)
-    data = json.loads(paths["json"].read_text())  # strict JSON (no NaN/inf)
+    data = json.loads(paths["json"].read_text(encoding="utf-8"))  # strict JSON (no NaN/inf)
     assert data["provenance"]["tool"] == "cacc"
     suites = ET.parse(paths["junit"]).getroot()
     assert suites.get("failures") == str(sum(
         (not c["passed"]) for case in rep["cases"] for c in case["checks"])
         + 1)  # + the failed sweep
-    md = paths["markdown"].read_text()
+    md = paths["markdown"].read_text(encoding="utf-8")
     assert "FAIL" in md and "base[h=0.3]" in md
     entry = next(c for c in data["cases"] if c["name"] == "base[h=0.3]")
-    saved = yaml.safe_load((tmp_path / entry["scenario_file"]).read_text())
+    saved = yaml.safe_load((tmp_path / entry["scenario_file"]).read_text(encoding="utf-8"))
     assert saved["controller"]["h"] == 0.3
 
 
@@ -224,3 +224,17 @@ def test_init_scaffold_produces_a_valid_project(tmp_path):
     assert (proj / ".github" / "workflows" / "controller-gate.yml").is_file()
     assert main(["init", str(proj)]) == 2  # refuses to overwrite
     assert main(["init", str(proj), "--force"]) == 0
+
+
+def test_cli_output_survives_a_non_utf8_pipe():
+    """Reports print ✓ / ✕ / ‖Γ‖; a cp1252 pipe (Windows default) must not crash."""
+    import os
+    import subprocess
+    import sys
+
+    code = ("from cacc.cli import _utf8_streams; _utf8_streams(); "
+            "print('\u2713 \u2715 \u2016\u0393\u2016')")
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.decode("utf-8").strip() == "\u2713 \u2715 \u2016\u0393\u2016"

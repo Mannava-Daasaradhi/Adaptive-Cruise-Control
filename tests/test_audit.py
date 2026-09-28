@@ -109,7 +109,7 @@ def test_audit_writes_report_json_twins_and_gates(audited):
     assert [v.twin.verdict for v in res.vehicles] == ["string-unstable",
                                                       "string-stable"]
     assert res.exit_code == 1
-    data = json.loads(paths["calibration"].read_text())
+    data = json.loads(paths["calibration"].read_text(encoding="utf-8"))
     assert data["meta"]["log_sha256"] == res.meta["log_sha256"]
     assert len(data["meta"]["log_sha256"]) == 64
     f0 = data["followers"][0]
@@ -130,7 +130,7 @@ def test_duplicate_vehicle_names_keep_separate_outputs(tmp_path):
 
 def test_report_is_self_contained_and_escapes_log_content(audited):
     res, paths = audited
-    html = paths["report"].read_text()
+    html = paths["report"].read_text(encoding="utf-8")
     assert f"cacc audit {res.source} " in html  # the command as it was run
     assert html.startswith("<!doctype html>")
     assert "Car&lt;U&gt;" in html and "Car<U>" not in html

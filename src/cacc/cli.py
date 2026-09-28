@@ -7,6 +7,7 @@
     cacc audit LOG.csv [-o OUT]                   customer audit report (HTML)
     cacc init DIR                                  scaffold a controller project
     cacc metrics                                   list criterion metrics
+    cacc gui                                       CACC Studio desktop app
 
 Exit codes: 0 = pass / stable, 1 = fail / unstable, 2 = error (bad plan,
 simulation crash, bad arguments).
@@ -226,6 +227,12 @@ def cmd_metrics(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    from cacc.gui import main as gui_main
+
+    return gui_main([])
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cacc", description="String-stability and V2X-robustness test "
@@ -294,10 +301,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     m = sub.add_parser("metrics", help="list the metrics criteria can use")
     m.set_defaults(fn=cmd_metrics)
+
+    g = sub.add_parser("gui", help="open CACC Studio, the desktop app "
+                       "(needs pip install -e \".[gui]\")")
+    g.set_defaults(fn=cmd_gui)
     return p
 
 
+def _utf8_streams() -> None:
+    """Reports contain ✓ / ✕ / ‖Γ‖; a Windows pipe or redirect defaults to
+    cp1252 and would crash printing them, so write UTF-8 there."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_streams()
     args = build_parser().parse_args(argv)
     _logging(args.verbose)
     try:

@@ -1,8 +1,8 @@
 """Physics-consistency V2V gate (D-022): bounded-injection spoof defence.
 
-Pins the claims that make the security extension patent-grade:
+Pins the behaviours the security extension is built on:
   1. the fused feedforward can deviate from the radar-consistent value by at
-     most ``r0 / 2`` for ANY spoof magnitude (the bounded-injection theorem);
+     most ``r0 / 2`` for ANY spoof magnitude (an elementary bound: max of r/(1+(r/r0)^2));
   2. the gate is inert under honest operation (channel noise, no attack) — it
      does not perturb the validated string-stability behaviour;
   3. under a large V2V spoof the gate holds a safe gap where the ungated design

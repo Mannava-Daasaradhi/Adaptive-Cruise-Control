@@ -36,3 +36,7 @@ matlab/slprj/
 matlab/*.slxc
 matlab/**/*.autosave
 matlab/**/*.asv
+
+# Third-party papers: keep local copies, never redistribute (copyright).
+# references/README.md lists every paper with its DOI / arXiv link.
+references/*.pdf

@@ -1,0 +1,11 @@
+cacc — string-stability and V2X-robustness test engine for longitudinal
+vehicle controllers.
+
+Copyright 2026 Mannava Daasaradhi
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Field data note: the OpenACC database is published by the European
+Commission, Joint Research Centre (JRC) under CC BY 4.0. It is not
+redistributed in this repository; cite it as "European Commission, Joint
+Research Centre (JRC): OpenACC" when you use it.

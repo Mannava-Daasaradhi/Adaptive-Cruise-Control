@@ -54,9 +54,18 @@ frequency-domain `||H~||_inf` machinery without interfering:
   risk-parameterised headway — the principled replacement for A's heuristic
   safety margin.
 
-Read as patent structure: **A and B are independent dependent claims**
-(anticipatory spacing; bounded-injection security), and **C is the backbone**
-that quantifies the risk both trade against.
+**C is the backbone** that quantifies the risk A and B trade against.
+
+**Novelty and prior art (read before pitching these as inventions).** None of
+the three ideas is new in concept, and the code has been public on GitHub
+since July 2026, which counts as prior disclosure for any later patent filing.
+Closest prior work: for A, Pfadler, Jornod, El Assaad and Jung (IEEE
+VTC2020-Spring) and Volkswagen's US 11,972,689 B2 adapt platoon spacing to
+*predicted* link quality; for B, GM's US 12,043,272 B2 and the CACC attack
+literature check V2X messages against on-board sensors; for C, Acciani et al.
+(IEEE T-ITS 2022) on stochastic string stability. What is specific here is
+the combination with the Ma-2025 noise model and the closed-form operators.
+Full list: `references/README.md`.
 
 ## Headline results (all validated in-repo)
 

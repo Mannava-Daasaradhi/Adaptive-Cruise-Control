@@ -7,10 +7,13 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    # Windows is in the matrix because CACC Studio ships as a Windows app:
+    # encoding and multiprocessing (spawn) bugs only show up there.
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +23,11 @@ jobs:
           cache: pip
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
+      - name: CLI entry points
+        run: |
+          cacc --version
+          python -m cacc --version
+          python -m cacc evaluate examples/plans/smoke.yaml -j 2 -o results/ci/smoke
 
   controller-gate:
     # The product workflow a customer would copy: evaluate a controller

@@ -1,6 +1,6 @@
 """Predictive QoS-map spacing (D-021): map lookahead + anticipatory headway.
 
-Pins the two claims that make the extension patent-grade:
+Pins the two behaviours the extension is built on:
   1. the headway is opened *before* the platoon reaches the interference patch
      (reactive adaptation only opens after entry);
   2. the in-force string-stability margin ||H~||_inf is held (<= 1) throughout

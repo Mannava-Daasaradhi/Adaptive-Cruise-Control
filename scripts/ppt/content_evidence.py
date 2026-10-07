@@ -240,8 +240,8 @@ def build(prs, fig):
              "string-unstable for the whole time it is inside the zone",
              ("ρ̂ median {10.4, 3.1, 10.7} vs true {10, 3, 10};\n"
               "median zone tracking error 4.75 %; headway opens and recovers", "g"),
-             ("the channel IS estimable online from radar-vs-beacon residuals, and the "
-              "estimator is conservative by construction", "b")],
+             ("estimable online only with a near-perfect radar: 0.05 m/s² of radar "
+              "error collapses ρ̂ (D-028); a sender-reported ρ fixes it", "b")],
             [("4  re-tune", "b"),
              "ρ = 2 zone, headway-only adaptation:\n"
              "h settles at 2.50 s with k_v = 0.63, in-force ‖H̃‖∞ = 1.019\n"
@@ -271,11 +271,10 @@ def build(prs, fig):
                 "enters the degraded zone, so the instability is ELIMINATED "
                 "rather than merely shortened. Reacting to a channel you have "
                 "already entered is late by one adaptation time constant.", "g"),
-            (0, "5B — a predecessor-following chain has no neighbours to vote "
-                "with, so consensus filtering is unavailable. The gate uses the "
-                "fact that the same quantity arrives TWICE — over the radio and "
-                "off the radar — and trusts the radio only as far as physics "
-                "allows.", "g"),
+            (0, "5B — the same quantity arrives TWICE, over the radio and off "
+                "the radar, so the gate trusts the radio only as far as physics "
+                "allows. Caveat (D-028): a LAGGED radar makes it distrust honest "
+                "braking (collision at h = 0.8 s); matching the lag fixes it.", "g"),
         ],
         subtitle="Predictive QoS map (D-021) · physics-consistency V2V trust gate (D-022)",
         accent=ACCENT2, img_frac=0.60)

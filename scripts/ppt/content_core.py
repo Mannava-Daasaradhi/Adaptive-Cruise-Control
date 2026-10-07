@@ -31,7 +31,7 @@ def build(prs, fig):
             "",
             "Backends:  Python scientific core  ·  ROS 2 distributed (one process per "
             "vehicle)  ·  MATLAB / Simulink block model",
-            "Status:  reproduced to the paper's printed digits  ·  87 unit tests green  ·  "
+            "Status:  reproduced to the paper's printed digits  ·  197 tests green  ·  "
             "Monte-Carlo certification run CERTIFIED",
         ])
 

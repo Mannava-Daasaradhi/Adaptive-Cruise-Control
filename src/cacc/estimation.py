@@ -60,6 +60,17 @@ class AdaptConfig:
     rho_lpf_tau: float = 0.0  # [s] asymmetric rho_hat smoothing (D-019); 0 = off
     stagger_s: float = 0.0  # [s] per-follower h-recovery serialization (D-019)
     preview_s: float = 0.0  # [s] predictive QoS-map lookahead horizon (D-021); 0 = off
+    # where rho comes from: 'estimate' = the receiver-side estimator below
+    # (needs a near-perfect radar: with realistic radar noise and probe-level
+    # excitation it collapses to rho_min), 'reported' = the sender reports
+    # its own value-noise level in the message, as ETSI CAMs carry a
+    # confidence with the acceleration (fix of 2026-10-08)
+    rho_source: str = "estimate"
+
+    def __post_init__(self):
+        if self.rho_source not in ("estimate", "reported"):
+            raise ValueError("adaptation rho_source must be 'estimate' or "
+                             "'reported'")
 
 
 class ChannelEstimator:

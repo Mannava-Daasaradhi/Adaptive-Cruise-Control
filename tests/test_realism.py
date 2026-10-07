@@ -214,3 +214,34 @@ def test_peak_amplification_metric_is_registered():
                      sc.leader).run()
     peaks = np.abs(res.err).max(axis=0)
     assert m.fn(res) == pytest.approx(float((peaks[1:] / peaks[:-1]).max()))
+
+
+# ------------------------------------------ channel estimation vs radar noise
+def _qos_windows(noise: float, source: str):
+    sc = load_scenario("scenarios/qos_adaptive.yaml")
+    cfg = dataclasses.replace(
+        sc.config, n_followers=2, t_final=150.0,
+        radar=RadarConfig(noise=noise),
+        adapt=dataclasses.replace(sc.config.adapt, rho_source=source))
+    res = PlatoonSim(cfg, "cthp", sc.leader).run()
+    good = (res.t >= 30) & (res.t < 80)
+    return float(np.nanmedian(res.rho_hat[good])), float(np.mean(res.h[good]))
+
+
+def test_noisy_radar_collapses_the_receiver_side_estimator():
+    rho, h = _qos_windows(0.05, "estimate")
+    assert rho < 2.0  # true rho is 10: the estimator believes the channel is bad
+    assert h > 2.0  # ... and the platoon drives near the headway ceiling
+
+
+def test_sender_reported_rho_survives_a_noisy_radar():
+    rho, h = _qos_windows(0.05, "reported")
+    assert rho == pytest.approx(10.0)
+    assert h == pytest.approx(0.96, abs=0.05)  # the good-channel design
+
+
+def test_rho_source_is_validated():
+    from cacc.estimation import AdaptConfig
+
+    with pytest.raises(ValueError, match="rho_source"):
+        AdaptConfig(rho_source="guess")

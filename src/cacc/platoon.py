@@ -239,6 +239,7 @@ class PlatoonSim:
         self._io_g = np.ones(n)  # trust weight g (D-022)
         self._io_ffinj = np.zeros(n)  # injected feedforward u_ff_eff - a_radar
         self._io_v2v = np.zeros(n)  # pre-gate V2V value (lag-matched gate)
+        self._rho_used = np.full(n, np.nan)  # sender-reported rho in use
 
     # ---------------------------------------------------------------- state
     def initial_state(self) -> np.ndarray:
@@ -424,14 +425,19 @@ class PlatoonSim:
                 preview_on = self.qos_map is not None and cfg.adapt.preview_s > 0
                 for i in range(n):
                     est, adp = self.estimators[i], self.adapters[i]
-                    # radar reference at the timestamp-aligned instant: the
-                    # receiver knows its own radar's filter delay, so the lag
-                    # is aligned away; the radar's noise is not
-                    a_ref = acc[k - lag, i]
-                    if self.radars is not None:
-                        a_ref += self.radars[i].noise_at(t - self._theta_hat)
-                    est.add_sample(t, self.links[i].receive(t), a_ref)
-                    rho = est.rho_hat(t)
+                    if cfg.adapt.rho_source == "reported":
+                        # the sender's own noise level, one message late
+                        rho = self.links[i].rho_at(t - cfg.delay)
+                        self._rho_used[i] = np.nan if rho is None else rho
+                    else:
+                        # radar reference at the timestamp-aligned instant:
+                        # the receiver knows its own radar's filter delay, so
+                        # the lag is aligned away; the radar's noise is not
+                        a_ref = acc[k - lag, i]
+                        if self.radars is not None:
+                            a_ref += self.radars[i].noise_at(t - self._theta_hat)
+                        est.add_sample(t, self.links[i].receive(t), a_ref)
+                        rho = est.rho_hat(t)
                     # predictive QoS-map lookahead (D-021): worst channel this
                     # follower meets within preview_s s at its current speed
                     rho_prev = None
@@ -452,9 +458,9 @@ class PlatoonSim:
                                              rho_preview=rho_prev)
             if adapting:
                 h_arr[k] = self.h_i
-                rho_arr[k] = [
-                    (e.rho_hat() or np.nan) for e in self.estimators
-                ]
+                rho_arr[k] = (self._rho_used if cfg.adapt.rho_source == "reported"
+                              else [(e.rho_hat() or np.nan)
+                                    for e in self.estimators])
                 if retuning:
                     gains_arr[k] = [(s.kp, s.kv) for s in self.schedulers]
             if k == steps:

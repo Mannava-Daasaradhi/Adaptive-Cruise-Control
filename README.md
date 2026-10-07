@@ -10,6 +10,20 @@ stack vendors who must show controller-level impact of latency/loss, and
 convoy/platooning teams. Why this market, and what comes next:
 [`docs/product/P-04`](docs/product/P-04-industry-and-product-strategy.md).
 
+## Key result: the engine caught a flaw in its own spoof defence
+
+![Minimum gap in an honest emergency brake vs radar lag](docs/figures/radar_lag_min_gap.png)
+
+A V2V spoof gate that checks messages against the car's radar keeps a
++5 m/s² phantom-throttle attack from causing a crash (8.2 m minimum gap vs
+−30.6 m without it). But radar acceleration is *late*. In an honest −7 m/s²
+emergency brake at a 0.8 s headway, a 0.3 s radar lag makes the original
+gate distrust the early V2V brake message and turns a near miss (0.11 m)
+into a collision (−0.26 m). Comparing the radar with the V2V value received
+one radar-lag earlier keeps every case within 0.06 m of the ungated
+platoon. Reproduce: `python scripts/radar_lag_study.py` (about 2 minutes);
+details in [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).
+
 ## Quick start
 
 ```bash

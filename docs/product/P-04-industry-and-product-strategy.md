@@ -19,6 +19,32 @@
 minute → §4. What changed in code → §5. What to build next → §6. What could
 go wrong → §7.
 
+> **Update 2026-10-08 (market review, see D-028 and the project handbook).**
+> Several facts below have moved; where they conflict, this box wins.
+>
+> - **India created a dated forcing function.** MoRTH's August 2026 draft
+>   would require a C-V2X V2V unit meeting **AIS-230** on every new L, M and N
+>   category vehicle from **1 Oct 2028** (voluntary fitment from 1 Oct 2027);
+>   the 5.875-5.925 GHz band was exempted from licensing on 10 Jun 2026. Test
+>   agencies (ARAI, ICAT), OEMs and V2X suppliers (e.g. Danlaw, which filed on
+>   TRAI's V2X consultation) need V2V validation evidence. The draft is not
+>   final.
+> - **Regulation of string stability is discussed, not adopted.** UN R171
+>   (driver control assistance) received string-stability proposals with
+>   CLEPA/OICA feedback (ADAS-30-05, April 2024); JRC authors recommend
+>   functional requirements (Ciuffo et al., TR-C 2022). Nothing requires it
+>   for ACC today.
+> - **Truck platooning is not a "very high fit".** Daimler dropped
+>   platooning in January 2019; Locomation cut most staff and Embark wound
+>   down in 2023. Treat §3.2 as opportunistic only.
+> - **Production CACC exists in one market:** Toyota's ITS Connect
+>   Communicating Radar Cruise Control in Japan since October 2015.
+> - **The natural buyer of a drive-log audit is a third party** that holds
+>   recordings but not source code (JRC/ETH OpenACC team, test centres, road
+>   authorities, researchers), not the OEM that owns the controller.
+> - **Free, cited alternatives exist** for platooning research: Plexe (SUMO
+>   + Veins) and OpenCDA (CARLA + SUMO).
+
 ---
 
 ## 1. Why the repository reads like a study today
@@ -200,3 +226,4 @@ repeats). For a solo developer, consulting-led is lower risk.
 
 ## Revision history
 - 2026-09-25 — created with D-025 (v0.4.0): market scan, recommendation, product definition, roadmap.
+- 2026-10-08 — market update box (India AIS-230, UN R171, truck platooning, third-party evaluators).

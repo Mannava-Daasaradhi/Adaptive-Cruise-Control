@@ -22,6 +22,21 @@ Start with **1 and 2** in parallel (fast feedback, the product fits today);
 **3** as a channel once one audit exists to show; **4** opportunistically
 (slow procurement).
 
+> **Re-ranked 2026-10-08 (after the market review; see P-04's update box).**
+> 1. **Third-party evaluators with recordings** (JRC/ETH OpenACC team, test
+>    centres such as AstaZero, road authorities, research labs): they hold
+>    logs of other companies' cars and no source code, which is exactly what
+>    `cacc audit` needs. First move: run the audit on OpenACC and send them
+>    the table.
+> 2. **V2X suppliers, India first** (Danlaw, Qualcomm, test agencies ARAI and
+>    ICAT): India's draft AIS-230 V2V mandate (1 Oct 2028) creates dated
+>    demand for evidence of what latency and bursty loss do to vehicles.
+> 3. **Engineering-services firms** (KPIT, Tata Elxsi, LTTS): employer first,
+>    channel later.
+> 4. **OEM / Tier-1 ADAS teams:** deprioritised; they own their controllers
+>    and have no budget line for string stability until regulation asks.
+> 5. **Convoy / platooning:** dropped for now (segment largely collapsed).
+
 ## 2. Positioning
 
 - **Category:** controller-level validation for longitudinal automation.
@@ -98,3 +113,4 @@ feature count.
 
 ## Revision history
 - 2026-09-25 — created (D-026 sprint).
+- 2026-10-08 — segments re-ranked after the market review.

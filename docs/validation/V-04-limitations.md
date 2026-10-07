@@ -12,10 +12,16 @@ read this first; nothing here is hidden in prose elsewhere.
    (min-gap checks), not by theory.
 3. **Homogeneous platoon** — one (τ, L) for all; heterogeneity is
    plumbing-ready but unvalidated (R-06 extension recipe).
-4. **Channel model** — Ma-2025 multiplicative n-bit noise + Bernoulli
-   loss + constant delay. No fading correlation, no congestion coupling
-   between links (each link's noise is independent), no interference
-   between beacons.
+4. **Channel model** — Ma-2025 multiplicative n-bit noise (read it as
+   *value* noise: a digital radio drops corrupted packets) + constant or
+   jittered delay + independent or Gilbert-Elliott bursty loss (D-028).
+   No congestion coupling between links, no interference between beacons,
+   and no parameters fitted to field radio data yet.
+4a. **Radar** — ideal by default (true predecessor acceleration). With a
+   modelled lag the original spoof gate can cause a collision in an honest
+   emergency brake at short headways (D-028); use `trust.match_lag`. With
+   realistic radar noise the receiver-side ρ̂ estimator (D-016) collapses
+   to ρ_min; use `adaptation.rho_source: reported`.
 5. **v0 = 20 m/s chosen** (paper leaves it free); error dynamics are
    speed-independent but gap transitions and capacity numbers scale
    with v.
@@ -24,8 +30,9 @@ read this first; nothing here is hidden in prose elsewhere.
 6. **Quasi-static adaptation argument** is engineering-grade (rate
    limits + margins + live spot-checks), not a dwell-time theorem
    (T-08 sketches the formalization route).
-7. **L2 string stability** is the only stability notion used; L∞
-   (worst-case gap excursion) claims would need new machinery.
+7. **L2 string stability** is the only notion with theory behind it. An
+   L∞ *measurement* (`peak_amplification_max`, D-028) can now be gated in
+   test plans; there is no L∞ design theory.
 8. **Per-hop decoupling** relies on one-vehicle look-ahead; any
    multi-look-ahead extension invalidates the heterogeneous-parameter
    argument as stated.

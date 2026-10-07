@@ -17,6 +17,7 @@ vehicle:
   length: 4.0
   u_min: -8.0
   u_max: 3.0
+  act_delay: 0.0                # actuation dead time [s]; 0 or >= dt (D-028)
 
 controller:
   kp: 0.009                     # Ma-family scale (Ploeg family ~0.2)
@@ -33,6 +34,18 @@ network:
   noise_rho: 10.0               # > 1; null/0-in-ROS = noiseless
   noise_rate: 100.0             # w hold rate [Hz] — affects L2 envelopes!
   rho_schedule: [[0.0, 10.0], [80.0, 3.0], [175.0, 10.0]]  # step (t, rho)
+  delay_jitter: 0.0             # mean extra latency per message [s]; needs msg_rate (D-028)
+  loss_burst: null              # mean loss-burst length [messages]; needs msg_rate, 0 < loss_prob < 1
+
+radar:                          # follower's radar accel estimate (D-028); omit = ideal
+  lag: 0.0                      # effective delay [s]; 0 or >= dt
+  noise: 0.0                    # std of the estimate error [m/s^2]
+
+trust:                          # spoof gate (D-022)
+  enabled: false
+  r0: 3.0
+  match_lag: false              # compare radar with V2V received radar.lag ago (D-028)
+  trust_braking: false          # never weaken a harder brake (not recommended)
 
 adaptation:                     # -> AdaptConfig; omit = disabled
   enabled: true
@@ -48,6 +61,7 @@ adaptation:                     # -> AdaptConfig; omit = disabled
   adapt_gains: false            # D-017
   gain_rate: 0.05
   kv_frac: 0.9
+  rho_source: estimate          # estimate | reported (sender-reported rho, D-028)
 
 leader:
   profile: bursts               # sine | brake | constant | bursts

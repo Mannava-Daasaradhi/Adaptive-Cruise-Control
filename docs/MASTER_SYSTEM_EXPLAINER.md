@@ -34,7 +34,7 @@ convoy *anticipates* bad radio zones before entering them, *defends*
 itself against a radio that's lying to it, and *quantifies exactly how
 risky* any given setting is instead of giving a pass/fail answer. The
 result is **25 separate, individually-tested engineering subsystems**
-(not "a simulation of the paper" — a stack), 87 automated tests, two
+(not "a simulation of the paper" — a stack), 197 automated tests, two
 independent simulation engines (a monolithic Python one and a genuinely
 distributed ROS 2 one) that agree with each other to within a few
 percent, and every number traces to a reproducible script.
@@ -270,7 +270,7 @@ side of the G1–G3 boundary a number falls on.
 
 **The headline number, upfront: this project is not "a simulation of the
 paper." It is 25 separate, individually-tested engineering subsystems, in
-8 clusters, each answering a question the paper leaves open.** 87
+8 clusters, each answering a question the paper leaves open.** 197
 automated tests currently pass across the whole stack
 (`python -m pytest tests -q`).
 
@@ -749,7 +749,7 @@ of a scope boundary the paper states itself (G1–G3).**
 | trust in the radioed value | unconditional — the law "believes" whatever arrives | **fused against independent radar** (System 24) with a provable injection bound | unbounded spoof exposure → provably capped at `r0/2`, any spoof size |
 | the stability guarantee | binary: `‖H̃‖∞ ≤ 1` at the single worst-case noise draw | an **exact failure probability** (System 25), and a headway chosen against a risk budget | worst-case headway 1.154 s → 1.033 s at a 1-in-100 budget (10.5% capacity gain) |
 | execution model | not addressed — a theory/simulation paper | **cross-validated on a genuinely distributed backend** (Systems 14–17, real message passing, real OS scheduling jitter) | agreement within a few percent per hop |
-| validation | closed-form derivation + the authors' own simulation | **87 automated regression tests**, a one-command certification harness, every number traceable to a script | `pytest -q` → 87 passed |
+| validation | closed-form derivation + the authors' own simulation | **197 automated regression tests**, a one-command certification harness, every number traceable to a script | `pytest -q` → 197 passed |
 
 The paper is the physics and the stability theory — we never touch or
 re-derive those (**Part 1.6's transfer function is used unmodified
@@ -770,7 +770,7 @@ Per the master execution plan (`10_Handoff_Plan.md`):
 | **B** | Write the IEEE-format paper | **not yet written** — every number it needs already exists in `results/**/metrics.json`; skeleton and section-by-section source map already drafted in `10_Handoff_Plan.md` §4 |
 | **C** | Slides / live demo | **not yet built** — Cluster VII (Systems 18–22) already has every asset the demo script calls for |
 
-Everything else — Systems 1–13 and 18–25, all offline-validated, 87 tests
+Everything else — Systems 1–13 and 18–25, all offline-validated, 197 tests
 green — is **complete**. The honest one-sentence status: *the science and
 engineering are done and proven; what's left is packaging it for an
 audience* (the paper, the slides, and the ROS port that makes the demo

@@ -1,6 +1,6 @@
 # R-01 — `cacc` package overview and dependency map
 
-**Location:** `src/cacc` (v0.5.0) · Python 3.13, NumPy + PyYAML only in
+**Location:** `src/cacc` (v0.6.0) · Python ≥ 3.11 (dev env 3.12), NumPy + PyYAML only in
 the core (matplotlib only in scripts). 55-test pytest suite.
 
 ## Module map and allowed dependencies

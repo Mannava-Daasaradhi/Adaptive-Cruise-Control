@@ -102,13 +102,16 @@ over-amplification) both break it. This is why the paper's `h_lb` carries the
 a naive low-end analysis suggests.
 
 ## Reproduction
-Conda env `cacc` (Python 3.13, numpy 2.2). Full suite: **87 tests pass**.
+Conda env `cacc` (Python 3.12; CI also runs 3.11 and 3.13). Full suite: **197 tests pass** (2026-10-08).
+
+**Radar realism (2026-10-08, D-028).** Part B's results assume an ideal radar. With a lagged radar the original gate can turn an honest emergency brake into a collision at short headways; `python scripts/radar_lag_study.py` measures it, and `trust.match_lag` fixes it.
 
 ```bash
 python scripts/predictive_qos_study.py     # Part A  -> results/predictive_qos/
 python scripts/spoof_defense_study.py      # Part B  -> results/spoof_defense/
 python scripts/stochastic_cert_study.py    # Part C  -> results/stochastic_cert/
-pytest -q                                   # 87 passed
+python scripts/radar_lag_study.py         # Part B with a lagged radar (D-028)
+pytest -q                                   # 197 passed
 ```
 
 ## See also

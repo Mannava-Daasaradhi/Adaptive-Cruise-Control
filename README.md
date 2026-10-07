@@ -29,9 +29,9 @@ cacc init my-acc                                  # scaffold your own controller
 | **Bring your own controller** — any Python class as `file.py:Class` or `pkg.mod:Class`; nonlinear laws get raw gap/speed | `src/cacc/plugins.py` |
 | **Test plans** — base scenario × named cases × condition matrix × seeds, criteria like `"min_ttc >= 2.0"` | `src/cacc/evaluate.py`, `examples/plans/` |
 | **Black-box string stability** — multisine sweep measures per-hop \|Γ(jω)\| without a transfer function; matches theory to 1e-4 | `src/cacc/stringstab.py` |
-| **Impairment-faithful V2V** — delay, loss, Ma-2025 16-bit multiplicative noise, time-varying/spatial channel quality, spoofing attacks + physics-consistency gate | `src/cacc/network.py`, `trust.py` |
+| **Impairment-faithful V2V** — delay with jitter, independent or bursty (Gilbert–Elliott) loss with packet inter-reception stats, Ma-2025 value noise, time-varying/spatial channel quality, spoofing attacks + a physics-consistency gate checked against a modelled (late, noisy) radar | `src/cacc/network.py`, `trust.py`, `radar.py` |
 | **Evidence** — `report.json` (per seed, provenance), `junit.xml`, `summary.md`, resolved `cases/*.yaml`; exit 0/1/2 | `src/cacc/reporting.py` |
-| **Digital twin from drive logs** — reads JRC OpenACC or generic CSV logs, fits each car's ACC, reports the time-gap margin to string stability ± uncertainty, a model-free cross-check and a V2V what-if | `src/cacc/twin.py`, `fielddata.py` |
+| **Digital twin from drive logs** — reads JRC OpenACC or generic CSV logs, fits each car's ACC with and without actuation dead time, reports the time-gap margin ± uncertainty, a confidence level with warnings, a model-free cross-check and a V2V what-if | `src/cacc/twin.py`, `twin_checks.py`, `fielddata.py` |
 | **Audit report** — one command from a drive log to a self-contained HTML report: verdict per car, recommended time gap, five-car brake test, V2V feedforward × latency grid with a latency budget, and a release-gate plan per car | `src/cacc/audit.py` |
 | **CI template** — must-pass gate + must-reject canary; `cacc init` scaffolds the same for your repo | `.github/workflows/ci.yml`, `src/cacc/scaffold.py` |
 
@@ -79,4 +79,5 @@ certification harness (`scripts/certify.py`, D-018). **Car simulation:** Gazebo 
 5–10 vehicle platoon under CACC, enabling smaller gaps (higher road capacity) and lower fuel use
 vs ACC — robust to V2V delay.
 
-**Tests:** `python -m pytest -q`.
+**Tests:** `python -m pytest -q` (197 tests, about 3 minutes). **Licence:** Apache-2.0.
+**What changed after the 2026-10-08 review, and why:** [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).

@@ -57,7 +57,9 @@ amplification.
 ## Result
 
 h_req with the predictor stays **flat at 0.945 s for θ up to at least
-0.3 s** — matched compensation (θ̂ = θ) removes latency from the design
+0.3 s** — matched compensation (θ̂ = θ) restores the small-signal margin — it does
+not anticipate a step change such as a sudden brake, which no causal
+predictor can — and so removes latency from the small-signal design
 problem. Residual costs: (i) mild broadband noise injection via the slope
 (visible as ~+1 % per-hop L2 in noisy runs, verdict unaffected); (ii)
 sensitivity to θ̂ error is second-order near the flat part of the curve

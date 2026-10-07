@@ -5,7 +5,7 @@ All commands: repo root, conda env `cacc` (prefix with
 
 ## The gate (run after EVERY code change)
 
-    python -m pytest tests -q                       # 55 passed, ~25 s
+    python -m pytest tests -q                       # 197 passed, ~3 min
 
 If anything touched analysis/controllers/network:
 

@@ -8,7 +8,9 @@ machine — this runbook exists to rebuild it elsewhere.
 
 1. Miniconda; create the env:
 
-       conda create -n cacc python=3.13 numpy matplotlib pyyaml pytest pypdf
+       conda create -n cacc python=3.12
+       conda activate cacc
+       pip install -e ".[dev,gui]"
        conda activate cacc
 
 2. ffmpeg for MP4 rendering (winget is fine): `winget install ffmpeg` —
@@ -16,7 +18,7 @@ machine — this runbook exists to rebuild it elsewhere.
 3. Sanity gate:
 
        cd <repo>
-       conda run -n cacc python -m pytest tests -q          # 55 passed
+       conda run -n cacc python -m pytest tests -q          # 197 passed, ~3 min
        conda run -n cacc python scripts/reproduce_base_paper.py --quick
 
 ## WSL side (ROS 2 backend)

@@ -131,7 +131,9 @@ def is_stochastic(cfg: PlatoonConfig) -> bool:
     loss, radar noise), i.e. a single period's estimate carries noise."""
     return (cfg.noise_rho is not None or cfg.rho_schedule is not None
             or cfg.qos_map is not None or cfg.loss_prob > 0.0
-            or (cfg.trust.enabled and cfg.trust.radar_noise > 0.0))
+            or cfg.delay_jitter > 0.0
+            or (cfg.trust.enabled and (cfg.trust.radar_noise > 0.0
+                                       or cfg.radar.noise > 0.0)))
 
 
 def multisine(sweep: SweepConfig) -> Callable[[float], float]:
@@ -195,6 +197,23 @@ class StringStabilityResult:
         return float(self.omega[np.argmax(self.gain.max(axis=0))])
 
     @property
+    def peak_band_edge(self) -> str | None:
+        """``'low'`` / ``'high'`` when the peak sits on the lowest / highest
+        tone tested, else None.
+
+        A peak on the edge of the measured band means the true peak may lie
+        outside it, so the measured value can understate ||Gamma||_inf
+        (lower-bound caveat in the module docstring). Extend the band
+        (``base_period`` / ``harmonics``) before trusting a pass there.
+        """
+        k = int(np.argmax(self.gain.max(axis=0)))
+        if k == 0:
+            return "low"
+        if k == self.omega.size - 1:
+            return "high"
+        return None
+
+    @property
     def peak_gain_se(self) -> float | None:
         """Standard error of the peak gain (None for a single period)."""
         if self.gain_se is None:
@@ -222,6 +241,7 @@ class StringStabilityResult:
             "peak_omega_rad_s": round(self.peak_omega, 5),
             "peak_gain_se": (None if self.peak_gain_se is None
                              else round(self.peak_gain_se, 6)),
+            "peak_band_edge": self.peak_band_edge,
             "periods": self.periods,
         }
 

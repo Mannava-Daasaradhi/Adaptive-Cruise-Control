@@ -11,8 +11,29 @@ follower. Two transport modes:
   independently with probability ``loss_prob``; the receiver zero-order-holds
   the latest message that has arrived (arrival = sample time + delay).
 
-**Multiplicative channel noise** (Ma, Pagilla, Darbha 2025, eqs. (4)-(5)):
-with ``noise_rho = rho`` the delivered value is scaled by
+  Two impairments that V2X engineers actually measure can be added (sampled
+  mode only; fix of 2026-10-08):
+
+  - ``delay_jitter`` [s]: each message's latency is ``delay + X`` with X
+    exponential of mean ``delay_jitter`` (queueing / channel-access
+    contention), so ``delay`` is the minimum latency. Messages may arrive
+    out of order; the receiver keeps the newest by send time and discards
+    stale ones, as real stacks do.
+  - ``loss_burst`` [messages]: bursty (Gilbert-Elliott) loss instead of
+    independent loss. A two-state Markov chain (good: delivered, bad:
+    lost) with mean bad-burst length ``loss_burst`` and the same long-run
+    loss rate ``loss_prob``. Bursts, not the average rate, are what open
+    long packet inter-reception gaps.
+
+  ``stats()`` reports messages sent / delivered and the worst packet
+  inter-reception time (PIR), the quantity V2X latency budgets are written in.
+
+**Multiplicative value noise** (Ma, Pagilla, Darbha 2025, eqs. (4)-(5)). Note
+what it is and is not: in a digital radio (802.11p, C-V2X) a corrupted packet
+fails its CRC and is dropped, so bit errors do not arrive as scaled values.
+Read this term as error in the *transmitted value* (the sender's sensor and
+quantisation), the interpretation under which the paper's model is physical;
+packet-level impairments are delay, jitter and loss above. With ``noise_rho = rho`` the delivered value is scaled by
 
     w(t) = (1 - 1/rho) + (1/rho) * sum_{j=0}^{n-1} z_j(t) / 2^j,
 
@@ -29,6 +50,7 @@ fixed-step integrator in :mod:`cacc.platoon`).
 
 from __future__ import annotations
 
+import bisect
 import logging
 from dataclasses import dataclass
 from typing import Sequence
@@ -109,6 +131,8 @@ class V2VLink:
         noise_rate: float = 100.0,
         rho_schedule: Sequence[tuple[float, float]] | None = None,
         attack: LinkAttack | None = None,
+        delay_jitter: float = 0.0,
+        loss_burst: float | None = None,
     ):
         if delay < 0:
             raise ValueError("delay must be >= 0")
@@ -116,6 +140,28 @@ class V2VLink:
             raise ValueError("loss_prob must be in [0, 1]")
         if loss_prob > 0 and msg_rate is None:
             raise ValueError("packet loss requires sampled mode (set msg_rate)")
+        if delay_jitter < 0:
+            raise ValueError("delay_jitter must be >= 0")
+        if delay_jitter > 0 and msg_rate is None:
+            raise ValueError("delay_jitter requires sampled mode (set msg_rate)")
+        self._ge = None  # Gilbert-Elliott transition probabilities (p_gb, p_bg)
+        if loss_burst is not None:
+            if msg_rate is None:
+                raise ValueError("loss_burst requires sampled mode (set msg_rate)")
+            if loss_burst < 1.0:
+                raise ValueError("loss_burst is a mean burst length in "
+                                 "messages and must be >= 1")
+            if not 0.0 < loss_prob < 1.0:
+                raise ValueError("loss_burst needs 0 < loss_prob < 1 (the "
+                                 "long-run loss rate)")
+            p_bg = 1.0 / float(loss_burst)
+            p_gb = loss_prob * p_bg / (1.0 - loss_prob)
+            if p_gb > 1.0:
+                raise ValueError(f"loss_prob={loss_prob} is unreachable with "
+                                 f"mean bursts of {loss_burst} messages")
+            self._ge = (p_gb, p_bg)
+        self.delay_jitter = float(delay_jitter)
+        self.loss_burst = loss_burst
         if noise_rho is not None and noise_rho <= 1.0:
             raise ValueError("noise_rho must be > 1 (rho -> inf = no noise)")
         self.delay = float(delay)
@@ -152,8 +198,17 @@ class V2VLink:
         self._n = 0
         # sampled-mode state
         self._next_sample_t = 0.0
-        self._pending: list[tuple[float, float]] = []  # (arrival_time, value)
+        # (arrival_time, send_time, value), kept sorted by arrival time
+        self._pending: list[tuple[float, float, float]] = []
         self._held = self.initial
+        self._held_sent = -np.inf  # send time of the held message
+        self._ge_bad = False  # Gilbert-Elliott channel state
+        # separate stream so enabling jitter never shifts loss draws
+        self._jit_rng = np.random.default_rng([seed, 0x717])
+        self._n_sent = 0
+        self._n_delivered = 0
+        self._last_arrival: float | None = None
+        self._max_pir = 0.0
 
     @property
     def passthrough(self) -> bool:
@@ -210,9 +265,31 @@ class V2VLink:
         else:
             period = 1.0 / self.msg_rate
             while t >= self._next_sample_t:
-                if self._rng.random() >= self.loss_prob:
-                    self._pending.append((self._next_sample_t + self.delay, value))
+                ts = self._next_sample_t
+                self._n_sent += 1
+                if not self._lost():
+                    arrival = ts + self.delay
+                    if self.delay_jitter > 0.0:
+                        arrival += self._jit_rng.exponential(self.delay_jitter)
+                        bisect.insort(self._pending, (arrival, ts, value))
+                    else:  # FIFO: arrivals are already in order
+                        self._pending.append((arrival, ts, value))
                 self._next_sample_t += period
+
+    def _lost(self) -> bool:
+        """Draw the fate of one message (independent or Gilbert-Elliott)."""
+        if self._ge is None:
+            return self._rng.random() < self.loss_prob
+        p_gb, p_bg = self._ge
+        u = self._rng.random()
+        self._ge_bad = (u >= p_bg) if self._ge_bad else (u < p_gb)
+        return self._ge_bad
+
+    def stats(self) -> dict:
+        """Messages sent / delivered and the worst packet inter-reception
+        time [s] seen by the receiver so far (sampled mode)."""
+        return {"sent": self._n_sent, "delivered": self._n_delivered,
+                "max_pir_s": self._max_pir}
 
     def receive(self, t: float) -> float:
         """Value visible to the receiver at time ``t`` (noise applied last)."""
@@ -230,9 +307,17 @@ class V2VLink:
                 w = (q - t0) / (t1 - t0)
                 raw = float(u0 + w * (u1 - u0))
         else:
-            # sampled mode: deliver everything that has arrived by t
+            # sampled mode: deliver everything that has arrived by t, keeping
+            # the newest message by send time (stale arrivals are discarded)
             while self._pending and self._pending[0][0] <= t:
-                self._held = self._pending.pop(0)[1]
+                arrival, sent, value = self._pending.pop(0)
+                if sent > self._held_sent:
+                    self._held, self._held_sent = value, sent
+                    if self._last_arrival is not None:
+                        self._max_pir = max(self._max_pir,
+                                            arrival - self._last_arrival)
+                    self._last_arrival = arrival
+                    self._n_delivered += 1
             raw = self._held
         val = self.noise_at(t) * raw
         if self.attack is not None:  # malicious injection (D-022), post-noise

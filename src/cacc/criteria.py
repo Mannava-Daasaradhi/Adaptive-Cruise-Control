@@ -67,6 +67,18 @@ def l2_amplification_max(res: SimResult) -> float:
     return float(amplification_ratios(res, "l2").max())
 
 
+def peak_amplification_max(res: SimResult) -> float:
+    """Largest vehicle-to-vehicle growth of the PEAK spacing error.
+
+    The L-infinity counterpart of ``l2_amplification_max``: L2 string
+    stability bounds energy, while safety cares about the worst gap
+    excursion, which can grow even when the L2 ratio does not.
+    """
+    if res.err.shape[1] < 2:
+        return math.nan
+    return float(amplification_ratios(res, "peak").max())
+
+
 def peak_decel(res: SimResult) -> float:
     return float(max(0.0, -res.acc[:, 1:].min()))
 
@@ -106,6 +118,10 @@ METRICS: dict[str, Metric] = {
     "l2_amplification_max": Metric(l2_amplification_max, "-", "high",
                                    "largest vehicle-to-vehicle L2 error "
                                    "growth (> 1 = amplifying)"),
+    "peak_amplification_max": Metric(peak_amplification_max, "-", "high",
+                                     "largest vehicle-to-vehicle growth of "
+                                     "the peak spacing error (L-inf; > 1 = "
+                                     "amplifying)"),
     "peak_decel": Metric(peak_decel, "m/s^2", "high",
                          "hardest realized braking of any follower"),
     "peak_accel": Metric(peak_accel, "m/s^2", "high",

@@ -157,6 +157,8 @@ def render_markdown(report: dict) -> str:
             verdict = "pass" if ss["passed"] else "**FAIL**"
             if ss["marginal"]:
                 verdict += " (marginal)"
+            if ss.get("peak_band_edge"):
+                verdict += " (band edge)"
             lines.append(
                 f"| {case['name']} | string stability (sweep) | peak \\|Γ\\| ≤ "
                 f"{ss['max_gain']:g} | {_gain(ss)} @ "
@@ -174,6 +176,13 @@ def render_markdown(report: dict) -> str:
                   "standard errors of the limit under the stochastic channel; "
                   "the verdict is not resolved by this measurement (use the "
                   "analytic robust certificate for built-in controllers)."]
+    if any((c["string_stability"] or {}).get("peak_band_edge")
+           for c in report["cases"]):
+        lines += ["", "*band edge*: the measured peak sits on the lowest or "
+                  "highest tone tested, so the true peak may lie outside the "
+                  "band and the measured value can understate it; widen the "
+                  "sweep (`base_period`, `harmonics`) before relying on a "
+                  "pass."]
     return "\n".join(lines) + "\n"
 
 

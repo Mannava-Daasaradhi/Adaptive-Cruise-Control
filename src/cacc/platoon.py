@@ -14,7 +14,7 @@ delay term in this DDE and keeps the integrator an explicit fixed-step RK4.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Callable
 
 import numpy as np
@@ -24,6 +24,7 @@ from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
                              HeadwayAdapter)
 from cacc.network import LinkAttack, V2VLink
 from cacc.qos_map import QoSMap
+from cacc.radar import DelayLine, RadarConfig, RadarSensor
 from cacc.trust import TrustConfig, TrustGate
 from cacc.vehicle import N_STATES, VehicleParams
 
@@ -38,9 +39,11 @@ class PlatoonConfig:
     v0: float = 20.0  # initial platoon cruise speed [m/s]
     vehicle: VehicleParams = VehicleParams()
     control: ControllerParams = ControllerParams()
-    delay: float = 0.1  # V2V latency theta [s]
+    delay: float = 0.1  # V2V latency theta [s] (minimum latency with jitter)
     loss_prob: float = 0.0
     msg_rate: float | None = None  # None = continuous link
+    delay_jitter: float = 0.0  # mean extra latency per message [s] (sampled)
+    loss_burst: float | None = None  # mean loss-burst length [msgs] (sampled)
     noise_rho: float | None = None  # multiplicative channel noise (Ma 2025)
     noise_gammas: tuple[float, ...] | None = None  # None = paper's 16-bit channel
     noise_rate: float = 100.0  # noise-factor hold rate [Hz]
@@ -49,6 +52,7 @@ class PlatoonConfig:
     adapt: AdaptConfig = AdaptConfig()  # QoS-adaptive outer loop (D-016)
     attack: LinkAttack | None = None  # malicious V2V injection (D-022)
     trust: TrustConfig = TrustConfig()  # physics-consistency gate (D-022)
+    radar: RadarConfig = RadarConfig()  # radar accel estimate (ideal by default)
     dt: float = 0.01
     t_final: float = 40.0
     seed: int = 1
@@ -75,6 +79,7 @@ class SimResult:
     gains: np.ndarray | None = None  # (S, n, 2) live (kp, kv) when re-tuning
     trust: np.ndarray | None = None  # (S, n) trust weight g (gated runs, D-022)
     ff_inj: np.ndarray | None = None  # (S, n) injected feedforward u_ff_eff - a_radar
+    link_stats: list | None = None  # per-link sent/delivered/max PIR (sampled)
 
 
 @dataclass
@@ -150,7 +155,9 @@ class PlatoonSim:
                     noise_gammas=config.noise_gammas, noise_rate=config.noise_rate,
                     rho_schedule=link_scheds[i],
                     attack=(atk if atk is not None and atk.target_link == i
-                            else None))
+                            else None),
+                    delay_jitter=config.delay_jitter,
+                    loss_burst=config.loss_burst)
             for i in range(n)
         ]
         # physics-consistency trust gates (D-022): one per follower, guarding
@@ -159,6 +166,30 @@ class PlatoonSim:
         if config.trust.enabled:
             self.gates = [TrustGate(config.trust, seed_offset=i)
                           for i in range(n)]
+        # modelled radar (fix of 2026-10-08): one sensor per follower, read by
+        # the trust gate and by the channel estimator; None = ideal radar
+        rad = config.radar
+        if rad.lag > 0.0 and rad.lag < config.dt:
+            raise ValueError("radar lag must be 0 or >= dt")
+        if not rad.ideal and config.trust.radar_noise > 0.0:
+            raise ValueError("set radar noise in the radar block only "
+                             "(trust.radar_noise is the legacy radar)")
+        self.radars = (None if rad.ideal else
+                       [RadarSensor(rad, seed_offset=i) for i in range(n)])
+        # lag-matched comparison: the V2V value received radar.lag s ago
+        self.echoes = None
+        if config.trust.enabled and config.trust.match_lag:
+            if rad.lag <= 0.0:
+                raise ValueError("trust.match_lag needs a lagged radar "
+                                 "(radar.lag > 0)")
+            self.echoes = [DelayLine(rad.lag) for _ in range(n)]
+        # actuation dead time: each follower realizes u(t - act_delay)
+        self.act_lines = None
+        if config.vehicle.act_delay > 0.0:
+            if config.vehicle.act_delay < config.dt:
+                raise ValueError("vehicle act_delay must be 0 or >= dt")
+            self.act_lines = [DelayLine(config.vehicle.act_delay)
+                              for _ in range(n)]
         # --- QoS-adaptive outer loop (D-016): per-follower h, estimators ---
         c = config.control
         self.h_i = np.full(n, c.h)
@@ -207,6 +238,7 @@ class PlatoonSim:
         self._io_u = np.zeros(n)
         self._io_g = np.ones(n)  # trust weight g (D-022)
         self._io_ffinj = np.zeros(n)  # injected feedforward u_ff_eff - a_radar
+        self._io_v2v = np.zeros(n)  # pre-gate V2V value (lag-matched gate)
 
     # ---------------------------------------------------------------- state
     def initial_state(self) -> np.ndarray:
@@ -287,7 +319,13 @@ class PlatoonSim:
                 # V2V feedforward toward the independent radar estimate of the
                 # predecessor's acceleration; caps the injection at r0/2
                 if self.gates is not None:
-                    u_ff, g_i, _r_i, a_radar = self.gates[i].apply(t, u_ff, a_prev)
+                    self._io_v2v[i] = u_ff
+                    a_rad = (None if self.radars is None
+                             else self.radars[i].estimate(t, a_prev))
+                    ref = (None if self.echoes is None
+                           else self.echoes[i].read(t))
+                    u_ff, g_i, _r_i, a_radar = self.gates[i].apply(
+                        t, u_ff, a_prev, a_radar=a_rad, a_v2v_ref=ref)
                     self._io_g[i] = g_i
                     self._io_ffinj[i] = u_ff - a_radar
             else:
@@ -302,9 +340,10 @@ class PlatoonSim:
                 u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv))
                 if self.nc:
                     dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(xc, e, e_dot, u_ff, dv)
+            u_act = u if self.act_lines is None else self.act_lines[i].read(t)
             dx[b] = v
             dx[b + 1] = a
-            dx[b + 2] = (u - a) / veh.tau
+            dx[b + 2] = (u_act - a) / veh.tau
             self._io_e[i] = e
             self._io_edot[i] = e_dot
             self._io_u[i] = u
@@ -360,6 +399,16 @@ class PlatoonSim:
             if gating:
                 trust_arr[k] = self._io_g
                 ffinj_arr[k] = self._io_ffinj
+            # delay-line histories (accepted states only): radar sees the
+            # predecessor's realized acceleration, the echo keeps the pre-gate
+            # V2V value, the actuator keeps the saturated command
+            for i in range(n):
+                if self.radars is not None:
+                    self.radars[i].record(t, acc[k, i])
+                if self.echoes is not None:
+                    self.echoes[i].record(t, self._io_v2v[i])
+                if self.act_lines is not None:
+                    self.act_lines[i].record(t, u_arr[k, i])
             # broadcast over the links (leader feeds link 0); CACC shares the
             # commanded acceleration u, CTHP the realized acceleration a
             if self.ctrls[0].uses_v2v:
@@ -375,7 +424,13 @@ class PlatoonSim:
                 preview_on = self.qos_map is not None and cfg.adapt.preview_s > 0
                 for i in range(n):
                     est, adp = self.estimators[i], self.adapters[i]
-                    est.add_sample(t, self.links[i].receive(t), acc[k - lag, i])
+                    # radar reference at the timestamp-aligned instant: the
+                    # receiver knows its own radar's filter delay, so the lag
+                    # is aligned away; the radar's noise is not
+                    a_ref = acc[k - lag, i]
+                    if self.radars is not None:
+                        a_ref += self.radars[i].noise_at(t - self._theta_hat)
+                    est.add_sample(t, self.links[i].receive(t), a_ref)
                     rho = est.rho_hat(t)
                     # predictive QoS-map lookahead (D-021): worst channel this
                     # follower meets within preview_s s at its current speed
@@ -412,65 +467,15 @@ class PlatoonSim:
 
         peak = np.max(np.abs(err), axis=0)
         log.info("sim done: peak |e_i| per follower = %s m", np.array2string(peak, precision=3))
+        stats = ([lk.stats() for lk in self.links] if cfg.msg_rate is not None
+                 else None)
         return SimResult(t_arr, pos, vel, acc, err, u_arr, self.kind, cfg,
                          h=h_arr, rho_hat=rho_arr, gains=gains_arr,
-                         trust=trust_arr, ff_inj=ffinj_arr)
+                         trust=trust_arr, ff_inj=ffinj_arr, link_stats=stats)
 
 
 # ------------------------------------------------------------ scenario I/O
-def make_leader_profile(spec: dict) -> Callable[[float], float]:
-    """Build a leader acceleration profile ``a0(t)`` from a scenario dict.
-
-    Supported profiles:
-      * ``brake``: constant ``decel`` for ``duration`` seconds from ``t_start``
-      * ``sine``: ``amplitude * sin(2*pi*freq_hz*(t - t_start))`` from
-        ``t_start``, optionally only for ``duration`` seconds
-      * ``constant``: fixed ``value``
-    """
-    kind = spec["profile"].lower()
-    if kind == "brake":
-        t0 = float(spec.get("t_start", 5.0))
-        dur = float(spec.get("duration", 2.0))
-        dec = float(spec.get("decel", -4.0))
-        base = lambda t: dec if t0 <= t < t0 + dur else 0.0  # noqa: E731
-    elif kind == "sine":
-        t0 = float(spec.get("t_start", 5.0))
-        amp = float(spec.get("amplitude", 1.0))
-        f = float(spec.get("freq_hz", 0.1))
-        dur = spec.get("duration")  # seconds of sine; None = forever
-        t1 = np.inf if dur is None else t0 + float(dur)
-        base = (lambda t: amp * np.sin(2 * np.pi * f * (t - t0))  # noqa: E731
-                if t0 <= t < t1 else 0.0)
-    elif kind == "constant":
-        val = float(spec.get("value", 0.0))
-        base = lambda t: val  # noqa: E731
-    elif kind == "bursts":
-        # several sine bursts: [[t_start, duration, amplitude, freq_hz], ...]
-        bursts = [tuple(float(v) for v in b) for b in spec["bursts"]]
-
-        def base(t: float, _b=bursts) -> float:
-            for t0, dur, amp, f in _b:
-                if t0 <= t < t0 + dur:
-                    return amp * np.sin(2 * np.pi * f * (t - t0))
-            return 0.0
-    else:
-        raise ValueError(f"unknown leader profile: {kind!r}")
-    return _with_probe(base, spec)
-
-
-def _with_probe(base: Callable[[float], float], spec: dict) -> Callable[[float], float]:
-    """Superpose a small multi-sine probing dither on a leader profile.
-
-    Channel-noise estimation needs persistent excitation (w-samples exist
-    only while the communicated acceleration is nonzero, D-016); a
-    ``probe_amplitude`` of a few cm/s^2 keeps the estimators fed without
-    disturbing the platoon meaningfully.
-    """
-    amp = float(spec.get("probe_amplitude", 0.0))
-    if amp <= 0.0:
-        return base
-    w1, w2 = 2 * np.pi * 0.31, 2 * np.pi * 0.73  # incommensurate tones
-    return lambda t: base(t) + 0.5 * amp * (np.sin(w1 * t) + np.sin(w2 * t))
+from cacc.leader import make_leader_profile  # noqa: E402,F401  (re-export)
 
 
 def __getattr__(name: str):

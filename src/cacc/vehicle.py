@@ -4,10 +4,15 @@ Model (Ploeg et al. 2014, Sec. II) for one vehicle:
 
     p' = v                    position [m]
     v' = a                    velocity [m/s]
-    a' = (u - a) / tau        realized acceleration tracks command u with lag tau
+    a' = (u(t - theta_a) - a) / tau
+                              realized acceleration tracks command u with lag
+                              tau after an optional dead time theta_a
 
 The commanded acceleration ``u`` is saturated to ``[u_min, u_max]`` before it
-reaches the actuator, representing engine/brake limits.
+reaches the actuator, representing engine/brake limits. The dead time
+``act_delay`` (theta_a, default 0) models the pure delay of real drivelines
+and brake systems; the platoon simulator implements it with a delay line on
+the command history (it must then be >= the integration step).
 """
 
 from __future__ import annotations
@@ -32,12 +37,21 @@ class VehicleParams:
         Vehicle length [m]; used for gap bookkeeping and throughput metrics.
     u_min, u_max:
         Commanded-acceleration saturation limits [m/s^2] (braking / traction).
+    act_delay:
+        Actuation dead time theta_a [s] before the lag (0 = classic model).
     """
 
     tau: float = 0.1
     length: float = 4.0
     u_min: float = -8.0
     u_max: float = 3.0
+    act_delay: float = 0.0
+
+    def __post_init__(self):
+        if self.tau <= 0.0:
+            raise ValueError("vehicle tau must be > 0")
+        if self.act_delay < 0.0:
+            raise ValueError("vehicle act_delay must be >= 0")
 
     def clamp(self, u: float) -> float:
         """Saturate a commanded acceleration to the actuator limits."""

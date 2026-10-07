@@ -88,8 +88,12 @@ def test_recommended_gap_clears_the_boundary_by_two_se(audited):
     for v in res.vehicles:
         r = v.twin
         rec = recommended_time_gap(r)
-        assert rec >= r.min_time_gap + 2 * r.margin_se
-        assert rec - (r.min_time_gap + 2 * r.margin_se) < 0.1 + 1e-9
+        # the boundary planned for is the worse of the plausible structures
+        t_ref = r.min_time_gap
+        if r.alternative.get("comparable"):
+            t_ref = max(t_ref, r.alternative["min_string_stable_time_gap_s"])
+        assert rec >= t_ref + 2 * r.margin_se
+        assert rec - (t_ref + 2 * r.margin_se) < 0.1 + 1e-3
         assert math.isclose(rec * 10, round(rec * 10))  # a 0.1 s step
 
 

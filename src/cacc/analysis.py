@@ -21,6 +21,16 @@ where ka_eff = ka * w is the acceleration gain as scaled by the channel:
 w = E[w(t)] for nominal analysis, w = 1 + 1/rho for worst-case robust
 analysis, w = 1 for a noiseless channel.
 
+**Actuation dead time** (optional, ``act_delay`` = theta_a): the vehicle
+realizes its command through ``e^{-theta_a s} / (tau s + 1)``. The Ploeg
+family takes it inside G(s); for CTHP the closed loop becomes
+
+    H~(s) = e^{-theta_a s} N(s)
+            / (tau s^3 + s^2 + e^{-theta_a s} ((kv + h kp) s + kp))
+
+with N(s) the numerator above. String stability is most sensitive to this
+term, and the Ma-2025 design equations below assume theta_a = 0.
+
 **String stability** (L2, homogeneous one-vehicle look-ahead):
 
     ||Gamma(j w)||_inf <= 1
@@ -55,6 +65,7 @@ def gamma(
     ka_eff: float = 0.5,
     pred_theta_hat: float = 0.0,
     pred_base: float = 0.4,
+    act_delay: float = 0.0,
 ) -> np.ndarray:
     """Complex string-stability transfer function Gamma(j*omega).
 
@@ -79,11 +90,17 @@ def gamma(
         operator P(s) = 1 + theta_hat * A(s) * (1 - e^{-sT/2}) / (T/2)
         with A(s) = (1 - e^{-sT/2})/(s T/2), applied to the delayed
         feedforward. ``pred_theta_hat = 0`` disables it (cthp only).
+    act_delay:
+        Actuation dead time theta_a [s] between command and actuator lag
+        (see module docstring); 0 = the classic model.
     """
+    if act_delay < 0.0:
+        raise ValueError("act_delay must be >= 0")
     s = 1j * np.asarray(omega, dtype=float)
+    da = np.exp(-act_delay * s)
     kind = kind.lower()
     if kind in ("acc", "cacc"):
-        G = 1.0 / (s**2 * (tau * s + 1.0))
+        G = da / (s**2 * (tau * s + 1.0))
         C = kp + kd * s
         H = h * s + 1.0
         if kind == "acc":
@@ -97,8 +114,8 @@ def gamma(
             lead = 1.0 + pred_theta_hat * blk * (1.0 - np.exp(-half * s)) / half
             ff = ff * lead
         num = ka_eff * s**2 * ff + kv * s + kp
-        den = tau * s**3 + s**2 + (kv + h * kp) * s + kp
-        return num / den
+        den = tau * s**3 + s**2 + da * ((kv + h * kp) * s + kp)
+        return da * num / den
     raise ValueError(f"unknown kind: {kind!r}")
 
 
@@ -130,6 +147,7 @@ def min_stable_headway(
     ka_eff: float = 0.5,
     pred_theta_hat: float = 0.0,
     pred_base: float = 0.4,
+    act_delay: float = 0.0,
 ) -> float:
     """Smallest string-stable time headway h (bisection on ``is_string_stable``).
 
@@ -138,7 +156,7 @@ def min_stable_headway(
     controller families and is assumed by the bisection.
     """
     kind = kind.lower()
-    kw: dict = dict(kp=kp, tau=tau)
+    kw: dict = dict(kp=kp, tau=tau, act_delay=act_delay)
     if kind == "cthp":
         kw.update(kv=kv, ka_eff=ka_eff, theta=theta,
                   pred_theta_hat=pred_theta_hat, pred_base=pred_base)

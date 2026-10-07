@@ -19,6 +19,7 @@ from cacc.controllers import ControllerParams
 from cacc.estimation import AdaptConfig
 from cacc.network import LinkAttack
 from cacc.platoon import PlatoonConfig, Scenario, make_leader_profile
+from cacc.radar import RadarConfig
 from cacc.trust import TrustConfig
 from cacc.vehicle import VehicleParams
 
@@ -27,7 +28,8 @@ log = logging.getLogger(__name__)
 
 #: top-level blocks of the scenario YAML schema (docs/reference/R-11)
 SCENARIO_BLOCKS = ("name", "description", "platoon", "vehicle", "controller",
-                   "network", "adaptation", "attack", "trust", "leader", "sim")
+                   "network", "adaptation", "attack", "trust", "radar",
+                   "leader", "sim")
 
 
 def load_scenario(path: str | Path) -> Scenario:
@@ -60,6 +62,8 @@ def scenario_from_dict(raw: dict, default_name: str = "scenario") -> Scenario:
         extra["attack"] = LinkAttack(**raw["attack"])
     if "trust" in raw:  # physics-consistency gate (D-022)
         extra["trust"] = TrustConfig(**raw["trust"])
+    if "radar" in raw:  # modelled radar accel estimate (lag + noise)
+        extra["radar"] = RadarConfig(**raw["radar"])
     cfg = PlatoonConfig(
         vehicle=VehicleParams(**raw.get("vehicle", {})),
         control=ControllerParams(**raw.get("controller", {})),

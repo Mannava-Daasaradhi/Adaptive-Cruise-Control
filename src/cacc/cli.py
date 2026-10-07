@@ -126,12 +126,14 @@ def format_twin(r) -> str:
     lines = [f"{r.follower}  (behind {r.leader}) · {r.duration_s:.0f} s "
              f"ACC-engaged in {r.segments} segment(s) · mean speed "
              f"{r.v_mean:.1f} m/s",
-             "  fitted    " + " · ".join(
+             f"  fitted    ({r.structure} model) " + " · ".join(
                  f"{p} {getattr(m, p):.4g} ± {se[p]:.2g} {u}"
                  for p, u in (("k_s", "1/s²"), ("k_v", "1/s"), ("T", "s"),
-                              ("s0", "m"), ("tau", "s"))),
+                              ("s0", "m"), ("tau", "s"), ("delay", "s"))
+                 if p in se),
              f"  fit       gap RMSE {r.gap_rmse:.3g} m · speed RMSE "
-             f"{r.speed_rmse:.3g} m/s"]
+             f"{r.speed_rmse:.3g} m/s · R² gap {d['fit']['r2_gap']} / speed "
+             f"{d['fit']['r2_speed']}"]
     if r.min_time_gap is None:
         need = "is string-unstable at every time gap up to 10 s"
     else:
@@ -147,6 +149,14 @@ def format_twin(r) -> str:
     else:
         lines.append(f"  data      model-free estimate unavailable "
                      f"({emp.get('note', '')})")
+    alt = r.alternative or {}
+    conf = f"  confidence {r.confidence.upper()}"
+    if alt:
+        conf += (f" — the {alt['structure']} model "
+                 f"({'about as good' if alt['comparable'] else 'worse'} fit, "
+                 f"ΔBIC {alt['delta_bic']:+.1f}) says {alt['verdict']}")
+    lines.append(conf)
+    lines += [f"  warning   {w}" for w in r.warnings]
     w = r.what_if
     lower = w["min_string_stable_time_gap_s"]
     lines.append(f"  what-if   V2V feedforward ka = {w['ka']:g} at "

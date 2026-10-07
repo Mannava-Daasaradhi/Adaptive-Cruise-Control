@@ -19,6 +19,16 @@ segment of the log. Parameter standard errors come from the Jacobian,
 inflated for residual autocorrelation (AR(1) effective sample size), and are
 propagated to ``||Gamma||_inf``. A model-free Welch estimate of the speed
 transfer is reported next to the twin's as a cross-check.
+
+**Structure and confidence (fix of 2026-10-08).** Production ACCs also have
+a pure actuation dead time, the term published field studies fit (Gunter et
+al., IEEE T-ITS). Each hop is therefore fitted twice, with the lag model and
+with lag + dead time (``delay``; simulated with a second-order Pade
+approximation, analysed with the exact ``e^{-delay s}``), and the structures
+are compared by an autocorrelation-aware BIC (:mod:`cacc.twin_checks`). The
+report carries the chosen structure, the alternative's verdict, and a
+``confidence`` level with warnings: tiny error bars on a twin that misfits a
+real car are the failure this guards against.
 """
 
 from __future__ import annotations
@@ -27,89 +37,20 @@ import logging
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy import optimize, signal
+from scipy import signal
 
-from cacc.analysis import OMEGA_DEFAULT, gamma_magnitude, min_stable_headway
 from cacc.fielddata import PlatoonLog
+from cacc.twin_checks import BIC_COMPARABLE, assess, bic, r_squared
+from cacc.twin_fit import (_covariance, _fit, _initial_guesses, _segment_data,
+                           _stability, _verdict)
+from cacc.twin_model import (_DELAY_MIN, _LO, PARAMS, PARAMS_DELAY, STRUCTURES,
+                             UNITS, LinearACC, simulate_follower)
+
+__all__ = ["LinearACC", "PARAMS", "PARAMS_DELAY", "STRUCTURES", "TwinReport",
+           "UNITS", "calibrate_hop", "calibrate_log", "empirical_gain",
+           "simulate_follower", "synthesize_log"]
 
 _log = logging.getLogger(__name__)
-
-PARAMS = ("k_s", "k_v", "T", "s0", "tau")
-UNITS = {"k_s": "1/s^2", "k_v": "1/s", "T": "s", "s0": "m", "tau": "s"}
-# fit vector q = (k_s, k_v, T, s_bar, tau), s_bar = s0 + T * v_bar: the
-# equilibrium gap at the mean speed is far better identified than s0 itself
-_LO = np.array([1e-3, 0.0, 0.2, 0.5, 0.05])
-_HI = np.array([3.0, 3.0, 5.0, 300.0, 3.0])
-
-
-@dataclass(frozen=True)
-class LinearACC:
-    """Linear lag ACC: u = k_s (s - s0 - T v) + k_v dv, a' = (u - a)/tau."""
-
-    k_s: float
-    k_v: float
-    T: float
-    s0: float
-    tau: float
-
-    def gain(self, omega: np.ndarray, ka: float = 0.0,
-             theta: float = 0.0) -> np.ndarray:
-        """|Gamma(j omega)|; ``ka``/``theta`` add V2V feedforward (what-if)."""
-        return gamma_magnitude(omega, "cthp", self.T, kp=self.k_s, kv=self.k_v,
-                               ka_eff=ka, tau=self.tau, theta=theta)
-
-    def hinf(self, ka: float = 0.0, theta: float = 0.0) -> tuple[float, float]:
-        """(||Gamma||_inf, frequency of the peak [rad/s])."""
-        g = self.gain(OMEGA_DEFAULT, ka, theta)
-        k = int(np.argmax(g))
-        return float(g[k]), float(OMEGA_DEFAULT[k])
-
-    def min_stable_time_gap(self, ka: float = 0.0,
-                            theta: float = 0.0) -> float | None:
-        """Smallest time gap T at which these gains are string-stable."""
-        try:
-            return min_stable_headway("cthp", theta=theta, kp=self.k_s,
-                                      kv=self.k_v, ka_eff=ka, tau=self.tau,
-                                      lo=0.05, hi=10.0)
-        except ValueError:
-            return None
-
-    def scenario(self, v0: float, name: str = "twin",
-                 description: str = "") -> dict:
-        """A scenario mapping that runs this twin with the built-in CTHP law
-        (``cacc sweep twin.yaml -c cthp``, or ``base:`` of a test plan)."""
-        return {
-            "name": name,
-            "description": description,
-            "platoon": {"n_followers": 5, "v0": round(float(v0), 3)},
-            "vehicle": {"tau": round(self.tau, 4), "length": 4.0,
-                        "u_min": -8.0, "u_max": 3.0},
-            "controller": {"kp": round(self.k_s, 5), "kv": round(self.k_v, 5),
-                           "ka": 0.0, "h": round(self.T, 4),
-                           "r": round(self.s0, 3)},
-            "network": {"delay": 0.0},
-            "leader": {"profile": "brake", "t_start": 10.0, "duration": 3.0,
-                       "decel": -3.0},
-            "sim": {"dt": 0.01, "t_final": 120.0, "seed": 1},
-        }
-
-
-def simulate_follower(model: LinearACC, t: np.ndarray, v_lead: np.ndarray,
-                      x0: tuple[float, float, float]) -> tuple[np.ndarray,
-                                                                np.ndarray]:
-    """Gap and speed of ``model`` following the measured ``v_lead``.
-
-    Exact LTI solution (first-order-hold input) from the initial state
-    ``x0 = (gap, speed, acceleration)``.
-    """
-    k_s, k_v, T, s0, tau = (model.k_s, model.k_v, model.T, model.s0, model.tau)
-    A = np.array([[0.0, -1.0, 0.0], [0.0, 0.0, 1.0],
-                  [k_s / tau, -(k_s * T + k_v) / tau, -1.0 / tau]])
-    B = np.array([[1.0, 0.0], [0.0, 0.0], [k_v / tau, -k_s * s0 / tau]])
-    sys = signal.StateSpace(A, B, np.eye(3), np.zeros((3, 2)))
-    u = np.column_stack([v_lead, np.ones_like(v_lead)])
-    _, y, _ = signal.lsim(sys, u, t - t[0], X0=np.asarray(x0, float))
-    return y[:, 0], y[:, 1]
 
 
 @dataclass
@@ -135,6 +76,13 @@ class TwinReport:
     margin: float = float("nan")  # T - min_time_gap [s]
     margin_se: float = float("nan")
     what_if: dict = field(default_factory=dict)  # V2V feedforward what-if
+    structure: str = "lag"  # model structure chosen by the BIC
+    alternative: dict = field(default_factory=dict)  # the other structure
+    confidence: str = "high"  # high / medium / low (cacc.twin_checks)
+    warnings: list = field(default_factory=list)
+    r2_gap: float = float("nan")  # share of gap variation explained
+    r2_speed: float = float("nan")
+    resid_rho1: float = 0.0  # lag-1 autocorrelation of the residuals
 
     @property
     def verdict(self) -> str:
@@ -156,15 +104,21 @@ class TwinReport:
 
     def to_dict(self) -> dict:
         m = self.model
+        names = PARAMS_DELAY if self.structure == "lag+delay" else PARAMS
         return {
             "follower": self.follower, "leader": self.leader, "hop": self.hop,
             "source": self.source, "duration_s": round(self.duration_s, 1),
             "segments": self.segments,
-            "params": {p: round(getattr(m, p), 5) for p in PARAMS},
+            "structure": self.structure,
+            "confidence": self.confidence, "warnings": list(self.warnings),
+            "params": {p: round(getattr(m, p), 5) for p in names},
             "param_se": {p: round(v, 5) for p, v in self.se.items()},
             "units": UNITS,
             "fit": {"gap_rmse_m": round(self.gap_rmse, 4),
-                    "speed_rmse_mps": round(self.speed_rmse, 4)},
+                    "speed_rmse_mps": round(self.speed_rmse, 4),
+                    "r2_gap": _round(self.r2_gap, 4),
+                    "r2_speed": _round(self.r2_speed, 4),
+                    "residual_lag1_autocorr": round(self.resid_rho1, 3)},
             "v_mean_mps": round(self.v_mean, 3),
             "hinf": round(self.hinf, 5), "hinf_se": round(self.hinf_se, 5),
             "peak_omega_rad_s": round(self.peak_omega, 4),
@@ -173,47 +127,22 @@ class TwinReport:
             "time_gap_margin_s": _round(self.margin),
             "time_gap_margin_se_s": _round(self.margin_se, 4),
             "empirical": self.empirical, "what_if_v2v": self.what_if,
+            "alternative_structure": self.alternative,
         }
 
 
-def _segment_data(log: PlatoonLog, i: int, seg: slice):
-    t = log.t[seg]
-    v_l, v_f, gap = log.speed[seg, i - 1], log.speed[seg, i], log.gap[seg, i - 1]
-    # initial acceleration from a short least-squares slope (robust to noise)
-    k = min(10, t.size)
-    a0 = float(np.polyfit(t[:k] - t[0], v_f[:k], 1)[0])
-    return t, v_l, v_f, gap, (float(gap[0]), float(v_f[0]), a0)
-
-
-def _initial_guesses(data, v_bar: float) -> list[np.ndarray]:
-    """A regression-based start plus two generic ones."""
-    starts = [np.array([0.1, 0.4, 1.5, 5.0 + 1.5 * v_bar, 0.5]),
-              np.array([0.03, 0.2, 2.0, 5.0 + 2.0 * v_bar, 1.0])]
-    X, y = [], []
-    for t, v_l, v_f, gap, _ in data:
-        dt = float(np.median(np.diff(t)))
-        w = max(3, int(round(1.0 / dt)) | 1)  # ~1 s smoothing window, odd
-        kern = np.ones(w) / w
-        vs = np.convolve(v_f, kern, mode="same")
-        a = np.gradient(vs, dt)
-        sl = slice(w, -w or None)
-        X.append(np.column_stack([np.ones_like(gap), gap, v_f, v_l - v_f])[sl])
-        y.append(a[sl])
-    try:
-        c, *_ = np.linalg.lstsq(np.vstack(X), np.concatenate(y), rcond=None)
-        if c[1] > 1e-3 and -c[2] / c[1] > 0.2:
-            T = -c[2] / c[1]
-            s0 = -c[0] / c[1]
-            starts.insert(0, np.clip([c[1], max(c[3], 0.0), T, s0 + T * v_bar,
-                                      0.5], _LO, _HI))
-    except np.linalg.LinAlgError:
-        pass
-    return starts
-
-
 def calibrate_hop(log: PlatoonLog, i: int, min_duration: float = 30.0,
-                  v2v_ka: float = 0.5, v2v_delay: float = 0.1) -> TwinReport:
-    """Fit a :class:`LinearACC` twin to follower ``i`` (1-based) of ``log``."""
+                  v2v_ka: float = 0.5, v2v_delay: float = 0.1,
+                  structures: tuple[str, ...] = STRUCTURES) -> TwinReport:
+    """Fit a :class:`LinearACC` twin to follower ``i`` (1-based) of ``log``.
+
+    ``structures`` = ``("lag",)`` fits only the classic lag model;
+    the default also fits lag + dead time and keeps the better one by BIC.
+    """
+    if not structures or "lag" not in structures or not set(structures) \
+            <= set(STRUCTURES):
+        raise ValueError(f"structures must include 'lag' and be a subset of "
+                         f"{STRUCTURES}")
     segs = log.hop_segments(i, min_duration)
     if not segs:
         raise ValueError(f"follower {i} ({log.names[i]}): no ACC-engaged "
@@ -223,73 +152,78 @@ def calibrate_hop(log: PlatoonLog, i: int, min_duration: float = 30.0,
     sg = max(float(np.std(np.concatenate([d[3] for d in data]))), 0.5)
     sv = max(float(np.std(np.concatenate([d[2] for d in data]))), 0.1)
 
-    def model_of(q) -> LinearACC:
-        k_s, k_v, T, s_bar, tau = (float(x) for x in q)
-        return LinearACC(k_s, k_v, T, s_bar - T * v_bar, tau)
-
-    def residuals(q):
-        m = model_of(q)
-        out = []
-        for t, v_l, v_f, gap, x0 in data:
-            g_sim, v_sim = simulate_follower(m, t, v_l, x0)
-            out += [(g_sim - gap) / sg, (v_sim - v_f) / sv]
-        r = np.concatenate(out)
-        return np.where(np.isfinite(r), r, 1e3)
-
-    best = None
-    for q0 in _initial_guesses(data, v_bar):
-        sol = optimize.least_squares(residuals, q0, bounds=(_LO, _HI),
-                                     x_scale="jac", max_nfev=400)
-        if best is None or sol.cost < best.cost:
-            best = sol
-    q, model = best.x, model_of(best.x)
-    r = best.fun
-    m_obs, n_par = r.size, q.size
-    # AR(1) inflation: time-series residuals are strongly autocorrelated
-    rho = float(np.clip(np.corrcoef(r[:-1], r[1:])[0, 1], 0.0, 0.99))
-    infl = (1 + rho) / (1 - rho)
-    s2 = 2 * best.cost / max(m_obs - n_par, 1) * infl
-    J = best.jac
-    try:
-        cov_q = s2 * np.linalg.inv(J.T @ J)
-    except np.linalg.LinAlgError:
-        cov_q = np.full((n_par, n_par), np.nan)
+    fits = {"lag": _fit(data, v_bar, sg, sv, False,
+                        _initial_guesses(data, v_bar))}
+    if "lag+delay" in structures:  # nested: start from the lag solution
+        q = fits["lag"]["sol"].x
+        fits["lag+delay"] = _fit(data, v_bar, sg, sv, True,
+                                 [np.append(q, 0.05), np.append(q, 0.3)])
+    # one effective sample size for every structure (that of the simplest),
+    # so the BIC values are on the same scale and comparable
+    m_obs, rho_ref = fits["lag"]["sol"].fun.size, fits["lag"]["rho1"]
+    for f in fits.values():
+        f["bic"] = bic(f["sol"].cost, m_obs, f["sol"].x.size, rho_ref)
+    # Occam: the dead-time structure becomes the primary twin only on very
+    # strong evidence (its two extra Pade states can also soak up a noisy
+    # initial transient). Closer than that, both stay plausible: the lag
+    # twin is primary and the audit plans for the worse of the two.
+    name = ("lag+delay" if "lag+delay" in fits
+            and fits["lag+delay"]["bic"] < fits["lag"]["bic"] - BIC_COMPARABLE
+            else "lag")
+    fit = fits[name]
+    q, model = fit["sol"].x, fit["model_of"](fit["sol"].x)
+    n_par = q.size
+    cov_q = _covariance(fit)
     # map q-covariance to the reported parameters (s0 = s_bar - T v_bar)
-    M = np.eye(5)
+    M = np.eye(n_par)
     M[3, 2], M[3, 3] = -v_bar, 1.0
     cov_p = M @ cov_q @ M.T
-    se = {p: float(np.sqrt(max(cov_p[k, k], 0.0))) for k, p in enumerate(PARAMS)}
+    names = PARAMS_DELAY if name == "lag+delay" else PARAMS
+    se = {p: float(np.sqrt(max(cov_p[k, k], 0.0))) for k, p in enumerate(names)}
 
     hinf, w_pk = model.hinf()
     grad = np.zeros(n_par)
     for k in range(n_par):  # d hinf / d q by central differences
         dq = np.zeros(n_par)
         dq[k] = 1e-4 * max(abs(q[k]), 1e-3)
-        grad[k] = (model_of(np.clip(q + dq, _LO, _HI)).hinf()[0]
-                   - model_of(np.clip(q - dq, _LO, _HI)).hinf()[0]) / (2 * dq[k])
+        grad[k] = (fit["model_of"](np.clip(q + dq, fit["lo"], fit["hi"])).hinf()[0]
+                   - fit["model_of"](np.clip(q - dq, fit["lo"], fit["hi"])).hinf()[0]
+                   ) / (2 * dq[k])
     hinf_se = float(np.sqrt(max(grad @ cov_q @ grad, 0.0)))
-
-    def margin_of(qq) -> float:
-        mm = model_of(qq)
-        t_min = mm.min_stable_time_gap()
-        return np.nan if t_min is None else mm.T - t_min
-
-    t_min = model.min_stable_time_gap()
-    margin, margin_se = margin_of(q), np.nan
-    if t_min is not None:
-        gm = np.zeros(n_par)
-        for k in range(n_par):
-            dq = np.zeros(n_par)
-            dq[k] = 1e-3 * max(abs(q[k]), 1e-2)
-            gm[k] = (margin_of(np.clip(q + dq, _LO, _HI))
-                     - margin_of(np.clip(q - dq, _LO, _HI))) / (2 * dq[k])
-        margin_se = float(np.sqrt(max(gm @ cov_q @ gm, 0.0))) \
-            if np.all(np.isfinite(gm)) else np.nan
+    t_min, margin, margin_se = _stability(fit, cov_q)
 
     gap_err = np.concatenate([simulate_follower(model, t, v_l, x0)[0] - gap
                               for t, v_l, v_f, gap, x0 in data])
     spd_err = np.concatenate([simulate_follower(model, t, v_l, x0)[1] - v_f
                               for t, v_l, v_f, gap, x0 in data])
+    r2_gap = r_squared(gap_err, np.concatenate([d[3] for d in data]))
+    r2_speed = r_squared(spd_err, np.concatenate([d[2] for d in data]))
+
+    alt = {}
+    others = [k for k in fits if k != name]
+    if others:
+        other = fits[others[0]]
+        a_model = other["model_of"](other["sol"].x)
+        a_tmin, a_margin, a_se = _stability(other, _covariance(other))
+        a_names = PARAMS_DELAY if others[0] == "lag+delay" else PARAMS
+        alt = {"structure": others[0],
+               "params": {p: round(getattr(a_model, p), 5) for p in a_names},
+               "delta_bic": round(other["bic"] - fit["bic"], 2),
+               "comparable": bool(abs(other["bic"] - fit["bic"])
+                                  < BIC_COMPARABLE),
+               "verdict": _verdict(a_tmin, a_margin, a_se),
+               "min_string_stable_time_gap_s": _round(a_tmin),
+               "hinf": round(a_model.hinf()[0], 5)}
+    confidence, warns = assess(r2_gap, r2_speed, fit["rho1"],
+                               _verdict(t_min, margin, margin_se), t_min,
+                               alt or None)
+    if name == "lag+delay" and (model.tau <= 1.01 * _LO[4]
+                                or model.delay < _DELAY_MIN):
+        warns.append("lag and dead time are not separately identified from "
+                     "this data (one sits on its bound); their sum "
+                     f"({model.tau + model.delay:.2f} s) is, and the verdict "
+                     "does not depend on the split")
+
     h_v2v, w_v2v = model.hinf(v2v_ka, v2v_delay)
     rep = TwinReport(
         follower=log.names[i], leader=log.names[i - 1], hop=i,
@@ -300,13 +234,18 @@ def calibrate_hop(log: PlatoonLog, i: int, min_duration: float = 30.0,
         speed_rmse=float(np.sqrt(np.mean(spd_err**2))),
         v_mean=v_bar, hinf=hinf, hinf_se=hinf_se, peak_omega=w_pk,
         empirical=empirical_gain(log, i, segs),
-        min_time_gap=t_min, margin=float(margin), margin_se=float(margin_se),
+        min_time_gap=t_min, margin=margin, margin_se=margin_se,
         what_if={"ka": v2v_ka, "delay_s": v2v_delay, "hinf": round(h_v2v, 5),
                  "peak_omega_rad_s": round(w_v2v, 4),
                  "min_string_stable_time_gap_s": _round(
-                     model.min_stable_time_gap(v2v_ka, v2v_delay))})
-    _log.info("twin %s: k_s=%.4f k_v=%.3f T=%.2f s0=%.1f tau=%.2f |G|=%.4f",
-              rep.follower, *(getattr(model, p) for p in PARAMS), hinf)
+                     model.min_stable_time_gap(v2v_ka, v2v_delay))},
+        structure=name, alternative=alt, confidence=confidence,
+        warnings=warns, r2_gap=r2_gap, r2_speed=r2_speed,
+        resid_rho1=fit["rho1"])
+    _log.info("twin %s (%s, confidence %s): k_s=%.4f k_v=%.3f T=%.2f "
+              "s0=%.1f tau=%.2f delay=%.2f |G|=%.4f", rep.follower, name,
+              confidence, model.k_s, model.k_v, model.T, model.s0, model.tau,
+              model.delay, hinf)
     return rep
 
 

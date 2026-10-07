@@ -41,6 +41,7 @@ from cacc.platoon import (
     make_leader_profile,
 )
 from cacc.plugins import LongitudinalController
+from cacc.radar import RadarConfig
 from cacc.scenario import load_scenario, scenario_from_dict
 from cacc.trust import TrustConfig, TrustGate
 from cacc.vehicle import VehicleParams
@@ -70,6 +71,7 @@ __all__ = [
     "PlatoonConfig",
     "PlatoonSim",
     "QoSMap",
+    "RadarConfig",
     "Scenario",
     "SimResult",
     "TrustConfig",

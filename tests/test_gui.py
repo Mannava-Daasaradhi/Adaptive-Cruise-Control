@@ -34,8 +34,9 @@ def window(app):
 
 
 def test_window_builds_and_navigates(window):
-    assert window.stack.count() == 7
-    for key in ("audit", "evaluate", "lab", "stress", "standards", "simulate", "setup"):
+    assert window.stack.count() == 9
+    for key in ("audit", "evaluate", "lab", "stress", "standards", "realcars", "hil",
+                "simulate", "setup"):
         window.show_page(key)
         assert window.stack.currentWidget() is window.pages[key]
 
@@ -253,3 +254,22 @@ def test_aeb_energy_versions_and_standards(window, tmp_path):
                              ("PASS", "FAIL", "REVIEW"))]
     std.show_result({"rows": rows})
     assert std.table.rowCount() == 3 and std.table.item(1, 0).text() == "✕ FAIL"
+
+
+def test_real_cars_and_hil_pages(window, tmp_path):
+    from cacc.gui.page_hil import run_hil
+    from cacc.gui.page_realcars import run_study
+    from test_fieldstudy import microsim_csv
+
+    d = tmp_path / "runs"
+    d.mkdir()
+    microsim_csv(d / "55_25_S_1.csv", 1.3)
+    microsim_csv(d / "55_25_L_1.csv", 0.8)
+    rc = window.pages["realcars"]
+    rc.show_result(run_study(d, False, 1, tmp_path / "out", lambda *a: None))
+    assert rc.table.rowCount() == 3 and "2 real runs" in rc.status.text()
+    hp = window.pages["hil"]
+    assert not hp.address.isEnabled()  # demo device: no address needed
+    hp.show_result(run_hil("spawn", "", [2], "hard-brake", "nominal", 0.02, False, "cacc"))
+    assert hp.status.text().startswith("every reply on time")
+    assert "round trip" in hp.text.toPlainText()

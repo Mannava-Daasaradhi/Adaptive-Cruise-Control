@@ -148,5 +148,5 @@ certification harness (`scripts/certify.py`, D-018). **Car simulation:** Gazebo 
 5–10 vehicle platoon under CACC, enabling smaller gaps (higher road capacity) and lower fuel use
 vs ACC — robust to V2V delay.
 
-**Tests:** `python -m pytest -q` (276 tests). **Licence:** Apache-2.0.
+**Tests:** `python -m pytest -q` (277 tests). **Licence:** Apache-2.0.
 **What changed after the 2026-10-08 review, and why:** [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).

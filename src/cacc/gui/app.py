@@ -9,7 +9,9 @@ import cacc
 from cacc.gui.common import APP_NAME, STYLESHEET, label, resource
 from cacc.gui.page_audit import AuditPage
 from cacc.gui.page_evaluate import EvaluatePage
+from cacc.gui.page_hil import HILPage
 from cacc.gui.page_lab import LabPage
+from cacc.gui.page_realcars import RealCarsPage
 from cacc.gui.page_setup import SetupPage
 from cacc.gui.page_simulate import SimulatePage
 from cacc.gui.page_standards import StandardsPage
@@ -18,6 +20,7 @@ from cacc.gui.page_stress import StressPage
 NAV = (("setup", "  Start here"), ("audit", "  Audit a drive log"),
        ("evaluate", "  Evaluate a controller"), ("lab", "  Controller Lab"),
        ("stress", "  Stress test"), ("standards", "  Standards"),
+       ("realcars", "  Real cars"), ("hil", "  Hardware in the loop"),
        ("simulate", "  Live platoon"))
 
 
@@ -30,6 +33,7 @@ class MainWindow(QMainWindow):
         self.pages = {"setup": SetupPage(), "audit": AuditPage(),
                       "evaluate": EvaluatePage(), "lab": LabPage(),
                       "stress": StressPage(), "standards": StandardsPage(),
+                      "realcars": RealCarsPage(), "hil": HILPage(),
                       "simulate": SimulatePage()}
 
         side = QWidget()

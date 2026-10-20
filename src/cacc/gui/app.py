@@ -1,4 +1,4 @@
-"""CACC Studio main window: sidebar navigation over the five pages."""
+"""CACC Studio main window: sidebar navigation over the six pages."""
 
 from __future__ import annotations
 
@@ -9,12 +9,14 @@ import cacc
 from cacc.gui.common import APP_NAME, STYLESHEET, label, resource
 from cacc.gui.page_audit import AuditPage
 from cacc.gui.page_evaluate import EvaluatePage
+from cacc.gui.page_lab import LabPage
 from cacc.gui.page_setup import SetupPage
 from cacc.gui.page_simulate import SimulatePage
 from cacc.gui.page_stress import StressPage
 
 NAV = (("setup", "  Start here"), ("audit", "  Audit a drive log"),
-       ("evaluate", "  Evaluate a controller"), ("stress", "  Stress test"),
+       ("evaluate", "  Evaluate a controller"), ("lab", "  Controller Lab"),
+       ("stress", "  Stress test"),
        ("simulate", "  Live platoon"))
 
 
@@ -25,7 +27,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
         self.setStyleSheet(STYLESHEET)
         self.pages = {"setup": SetupPage(), "audit": AuditPage(),
-                      "evaluate": EvaluatePage(), "stress": StressPage(),
+                      "evaluate": EvaluatePage(), "lab": LabPage(),
+                      "stress": StressPage(),
                       "simulate": SimulatePage()}
 
         side = QWidget()
@@ -64,7 +67,12 @@ class MainWindow(QMainWindow):
         setup.navigate.connect(self.show_page)
         setup.open_plan.connect(self._open_plan)
         setup.sample_audit.connect(self._sample_audit)
+        self.pages["lab"].stress_design.connect(self._stress_design)
         self.nav.setCurrentRow(0)
+
+    def _stress_design(self, design) -> None:
+        self.pages["stress"].use_design(design)
+        self.show_page("stress")
 
     def show_page(self, key: str) -> None:
         self.nav.setCurrentRow([k for k, _ in NAV].index(key))

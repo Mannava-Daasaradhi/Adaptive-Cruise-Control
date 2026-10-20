@@ -30,7 +30,9 @@ details in [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).
 pip install -e .                                  # Python >= 3.11, installs the `cacc` command
 cacc evaluate examples/plans/smoke.yaml -j 2      # built-in CTHP design       -> PASS
 cacc evaluate examples/plans/idm_acc.yaml -j 2    # commercial-style ACC plugin -> FAIL (string-unstable)
-cacc stress -c cthp --preset full -j 6            # EV platoon: 6 maneuvers x 15 conditions grid
+cacc stress -c cthp --preset full -j 6            # EV platoon: 6 maneuvers x 15 conditions grid (Pro)
+cacc lab --preset cacc -o my.yaml && cacc lab my.yaml   # design a controller from transfer functions
+cacc stress -c my.yaml                            # ...and stress-test the design
 cacc sweep scenarios/leader_brake.yaml -c acc     # measured |Γ(jω)| per hop
 cacc calibrate examples/data/synthetic_openacc_platoon.csv   # digital twin of each car's ACC from a drive log
 cacc audit examples/data/synthetic_openacc_platoon.csv       # the customer deliverable: HTML report + release gates
@@ -44,6 +46,9 @@ cacc init my-acc                                  # scaffold your own controller
 | **Bring your own controller** — any Python class as `file.py:Class` or `pkg.mod:Class`; nonlinear laws get raw gap/speed | `src/cacc/plugins.py` |
 | **Test plans** — base scenario × named cases × condition matrix × seeds, criteria like `"min_ttc >= 2.0"` | `src/cacc/evaluate.py`, `examples/plans/` |
 | **Stress campaigns** — one controller against a maneuver × condition grid (emergency stop, stop-and-go, traffic wave… × latency, loss, spoofing, wet/snow road, derated battery, slow brakes); CACC Studio's *Stress test* page shows it as a heat map, replays any cell as telemetry and diffs against a baseline run | `src/cacc/campaign.py`, `src/cacc/gui/page_stress.py` |
+| **Controller Lab** — build a controller from transfer functions in s (one per measured signal: spacing error, its rate, relative speed, V2V feedforward); live \|Γ(jω)\|, closed-loop poles and the equations being solved, plus a maneuver replay that splits the command into each block's contribution and shows where grip / motor power clipped it; export to MATLAB, send to the stress grid | `src/cacc/tfctrl.py`, `src/cacc/gui/page_lab.py` |
+| **Integrations** — controllers exported as FMI 2.0 FMUs (Simulink, Modelica, CarMaker) run in every plan and campaign; CARLA co-simulation logs runs for `cacc audit`; `cacc ros2-params` drives `ros2_ws` with any controller | `src/cacc/adapters/` |
+| **GitHub Action** — `uses: Mannava-Daasaradhi/Adaptive-Cruise-Control@main` runs a plan or stress grid on every PR, comments the grid on the PR, writes the job summary and a status badge | `action.yml`, `src/cacc/ci.py` |
 | **EV powertrain** — speed-dependent motor-power and tyre-grip limits, battery energy with regen and drafting, `energy_kwh_100km` / `regen_share` criteria | `src/cacc/ev.py` |
 | **Black-box string stability** — multisine sweep measures per-hop \|Γ(jω)\| without a transfer function; matches theory to 1e-4 | `src/cacc/stringstab.py` |
 | **Impairment-faithful V2V** — delay with jitter, independent or bursty (Gilbert–Elliott) loss with packet inter-reception stats, Ma-2025 value noise, time-varying/spatial channel quality, spoofing attacks + a physics-consistency gate checked against a modelled (late, noisy) radar | `src/cacc/network.py`, `trust.py`, `radar.py` |
@@ -57,6 +62,12 @@ design records: [`D-025`](docs/decisions/D-025-product-core-bring-your-own-contr
 [`D-026`](docs/decisions/D-026-digital-twin-from-drive-logs.md),
 [`D-027`](docs/decisions/D-027-string-stability-audit-deliverable.md) ·
 go-to-market: [`docs/company/`](docs/company/GTM-01-go-to-market-plan.md).
+
+## Install
+
+**Windows:** `python scripts/build_exe.py` builds `CACC-Studio-<version>-setup.exe`
+(per-user install, Start menu, no Python needed; needs Inno Setup) plus a
+portable zip.
 
 ## Why trust the verdicts
 
@@ -96,5 +107,5 @@ certification harness (`scripts/certify.py`, D-018). **Car simulation:** Gazebo 
 5–10 vehicle platoon under CACC, enabling smaller gaps (higher road capacity) and lower fuel use
 vs ACC — robust to V2V delay.
 
-**Tests:** `python -m pytest -q` (212 tests). **Licence:** Apache-2.0.
+**Tests:** `python -m pytest -q` (236 tests). **Licence:** Apache-2.0.
 **What changed after the 2026-10-08 review, and why:** [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).

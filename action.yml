@@ -1,0 +1,109 @@
+name: cacc controller gate
+description: >
+  Stress-test or evaluate a longitudinal (ACC / CACC / platooning) controller
+  on every push and pull request; posts the grid on the PR, writes the job
+  summary and a status badge, and fails the check on FAIL.
+branding:
+  icon: truck
+  color: blue
+
+inputs:
+  controller:
+    description: "acc | cacc | cthp | module:Name | path/file.py:Name | Controller Lab design .yaml"
+    default: cthp
+  plan:
+    description: "test-plan YAML for `cacc evaluate` (if set, runs it instead of a stress campaign)"
+    default: ""
+  preset:
+    description: "stress grid: quick or full"
+    default: quick
+  maneuvers:
+    description: "space-separated maneuvers (overrides the preset)"
+    default: ""
+  conditions:
+    description: "space-separated conditions (overrides the preset)"
+    default: ""
+  criteria:
+    description: "one pass criterion per line, e.g. min_gap >= 2.0"
+    default: ""
+  seeds:
+    default: "2"
+  jobs:
+    default: "2"
+  comment:
+    description: "post / update the result on the pull request"
+    default: "true"
+  python-version:
+    default: "3.12"
+  out:
+    default: results/cacc
+
+outputs:
+  verdict:
+    description: PASS, FAIL or ERROR
+    value: ${{ steps.run.outputs.verdict }}
+  report:
+    value: ${{ inputs.out }}/report.json
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install cacc
+      shell: bash
+      run: pip install "${{ github.action_path }}"
+    - name: Run
+      id: run
+      shell: bash
+      env:
+        CTRL: ${{ inputs.controller }}
+        PLAN: ${{ inputs.plan }}
+        PRESET: ${{ inputs.preset }}
+        MANEUVERS: ${{ inputs.maneuvers }}
+        CONDITIONS: ${{ inputs.conditions }}
+        CRITERIA: ${{ inputs.criteria }}
+        SEEDS: ${{ inputs.seeds }}
+        JOBS: ${{ inputs.jobs }}
+        OUT: ${{ inputs.out }}
+      run: |
+        set +e
+        if [ -n "$PLAN" ]; then
+          cacc evaluate "$PLAN" -j "$JOBS" -o "$OUT"
+        else
+          args=(stress -c "$CTRL" --preset "$PRESET" --seeds "$SEEDS" -j "$JOBS" -o "$OUT")
+          [ -n "$MANEUVERS" ] && args+=(-m $MANEUVERS)
+          [ -n "$CONDITIONS" ] && args+=(-k $CONDITIONS)
+          while IFS= read -r rule; do
+            [ -n "$rule" ] && args+=(--criterion "$rule")
+          done <<< "$CRITERIA"
+          cacc "${args[@]}"
+        fi
+        code=$?
+        verdict=$(case $code in 0) echo PASS;; 1) echo FAIL;; *) echo ERROR;; esac)
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        echo "$code" > "$RUNNER_TEMP/cacc_exit"
+        exit 0
+    - name: Report
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        OUT: ${{ inputs.out }}
+      run: |
+        if [ -f "$OUT/report.json" ]; then
+          flag=""
+          [ "${{ inputs.comment }}" = "true" ] && flag="--comment"
+          cacc ci "$OUT/report.json" --badge "$OUT/badge.svg" \
+            --summary "$GITHUB_STEP_SUMMARY" $flag || true
+        else
+          echo "### ⚠️ cacc: no report (the run errored; see the Run step)" >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: cacc-evidence
+        path: ${{ inputs.out }}
+    - name: Gate
+      shell: bash
+      run: exit "$(cat "$RUNNER_TEMP/cacc_exit")"

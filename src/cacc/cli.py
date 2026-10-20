@@ -249,12 +249,15 @@ def cmd_stress(args) -> int:
         for k, (lab, group, _) in cp.CONDITIONS.items():
             print(f"  {k:18s} [{group}] {lab}")
         return 0
+    from cacc.tfctrl import resolve
+
     man, cond = cp.PRESETS[args.preset]
+    man, cond = args.maneuvers or man, args.conditions or cond
+    ref, options, block = resolve(args.controller, _options(args.option))
     plan = cp.build_plan(
-        args.controller, maneuvers=args.maneuvers or man,
-        conditions=args.conditions or cond, seeds=args.seeds,
+        ref, maneuvers=man, conditions=cond, seeds=args.seeds,
         criteria=args.criterion or cp.DEFAULT_CRITERIA,
-        options=_options(args.option), base=args.base)
+        options=options, base=args.base, controller_block=block)
     n = len(plan.cases)
     print(f"cacc {cacc.__version__} · stress campaign: {args.controller}, "
           f"{n} cell(s) x {len(plan.seeds)} seed(s) · {args.jobs} worker(s)",
@@ -346,7 +349,8 @@ def build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("stress", help="stress campaign: one controller vs "
                         "a maneuver x condition grid (EV platoon)")
     st.add_argument("-c", "--controller", default="cthp",
-                    help="acc | cacc | cthp | module:Name | file.py:Name")
+                    help="acc | cacc | cthp | module:Name | file.py:Name | "
+                    "Controller Lab design .yaml")
     st.add_argument("--preset", choices=("quick", "full"), default="quick")
     st.add_argument("-m", "--maneuvers", nargs="+", help="override the preset")
     st.add_argument("-k", "--conditions", nargs="+", help="override the preset")
@@ -370,6 +374,10 @@ def build_parser() -> argparse.ArgumentParser:
     g = sub.add_parser("gui", help="open CACC Studio, the desktop app "
                        "(needs pip install -e \".[gui]\")")
     g.set_defaults(fn=cmd_gui)
+
+    from cacc.cli_tools import register
+
+    register(sub)
     return p
 
 

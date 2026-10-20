@@ -77,20 +77,26 @@ string_stability:
 
 WORKFLOW = '''name: controller-gate
 on: [push, pull_request]
+permissions:
+  contents: read
+  pull-requests: write   # the gate comments its result on the PR
 jobs:
-  gate:
+  release-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.12"}
-      - run: pip install "cacc @ git+https://github.com/Mannava-Daasaradhi/Adaptive-Cruise-Control"
-      - run: cacc evaluate plans/release_gate.yaml -j 2 -o results/gate
-      - if: always()
-        run: cat results/gate/summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with: {name: controller-evidence, path: results/gate/}
+      - uses: Mannava-Daasaradhi/Adaptive-Cruise-Control@main
+        with:
+          plan: plans/release_gate.yaml
+  stress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Mannava-Daasaradhi/Adaptive-Cruise-Control@main
+        with:
+          controller: controllers/my_controller.py:MyController
+          preset: quick            # or full: the 90-cell grid
+          out: results/stress
 '''
 
 README = '''# {name} — controller evaluation

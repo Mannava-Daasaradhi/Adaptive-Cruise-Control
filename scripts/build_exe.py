@@ -3,6 +3,11 @@
     pip install -e ".[package]"
     python scripts/build_exe.py            # -> dist/CACC-Studio/CACC-Studio.exe
                                            #    + dist/CACC-Studio-<version>-win64.zip
+                                           #    + dist/CACC-Studio-<version>-setup.exe
+
+The setup.exe is built with Inno Setup 6 (packaging/cacc_studio.iss) when
+``iscc`` is on PATH or in its default install folder (winget install
+JRSoftware.InnoSetup); without it the zip is the deliverable.
 
 One-folder build (not --onefile): it starts in a couple of seconds instead
 of unpacking ~300 MB of numpy/scipy/Qt on every launch, and antivirus
@@ -15,6 +20,7 @@ audit + a test plan on 2 worker processes); a failure stops the build.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -58,6 +64,14 @@ def self_test(report_path):
                           tmp / "eval")
         lines.append(("PASS " if rep["verdict"] == "PASS" else "FAIL ")
                      + f"smoke plan on 2 worker processes: {rep['verdict']}")
+        from cacc import tfctrl
+        from cacc.gui.page_lab import simulate
+        d = tfctrl.Design.preset("cacc")
+        rep_lab = tfctrl.analyse(d, 0.2, 0.05)[2]
+        res, parts = simulate(d, "hard-brake", 0.2, 0.0, 0.05, 2)
+        ok = rep_lab.string_stable and abs(parts["sum"] - parts["u"]).max() < 1e-3
+        lines.append(("PASS " if ok else "FAIL ")
+                     + f"controller lab: peak gain {rep_lab.peak_gain:.3f}")
         app.quit()
     except Exception:
         lines.append("FAIL " + traceback.format_exc())
@@ -121,7 +135,36 @@ def main() -> int:
         root_dir=app_dir.parent, base_dir=app_dir.name)
     size = sum(f.stat().st_size for f in app_dir.rglob("*") if f.is_file()) / 1e6
     print(f"\nbuilt {exe}  ({size:.0f} MB unpacked)\nship  {archive}")
+    setup = build_installer(app_dir, cacc.__version__)
+    if setup:
+        print(f"ship  {setup}")
     return 0
+
+
+def find_iscc() -> str | None:
+    """Inno Setup's compiler, from PATH or its default install folders."""
+    found = shutil.which("iscc")
+    if found:
+        return found
+    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"),
+                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
+        cand = Path(base or "") / "Inno Setup 6" / "ISCC.exe"
+        if base and cand.is_file():
+            return str(cand)
+    return None
+
+
+def build_installer(app_dir: Path, version: str) -> Path | None:
+    """dist/CACC-Studio-<version>-setup.exe, or None without Inno Setup."""
+    iscc = find_iscc()
+    if iscc is None:
+        print("Inno Setup not found: skipping setup.exe (winget install "
+              "JRSoftware.InnoSetup)", file=sys.stderr)
+        return None
+    script = ROOT / "packaging" / "cacc_studio.iss"
+    subprocess.run([iscc, f"/DAppVersion={version}", f"/DSourceDir={app_dir}",
+                    f"/DOutDir={ROOT / 'dist'}", str(script)], check=True)
+    return ROOT / "dist" / f"{NAME}-{version}-setup.exe"
 
 
 if __name__ == "__main__":

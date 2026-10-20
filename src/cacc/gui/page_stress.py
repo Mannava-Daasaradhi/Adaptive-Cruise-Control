@@ -29,20 +29,22 @@ from cacc.gui.stress_telemetry import Telemetry
 CONTROLLERS = (("cthp", "CTHP CACC — Ma 2025 gains"),
                ("cacc", "CACC — radar + V2V (Ploeg 2014)"),
                ("acc", "ACC — radar only"),
-               ("plugin", "My controller (plugin file.py:Class)"))
+               ("plugin", "My controller (plugin file.py:Class)"),
+               ("lab", "Controller Lab design"))
 #: cell background by verdict and margin
 PASS_BG, TIGHT_BG, FAIL_BG, ERR_BG = "#dff2df", "#fbf1d0", "#f6d5d5", "#eeeeee"
 TIGHT = 0.15  # a pass with less than 15 % margin is drawn amber
 
 
 def run_stress(controller, options, maneuvers, conditions, seeds, criteria,
-               jobs, out, progress):
+               jobs, out, progress, controller_block=None):
     """Background job: build the campaign plan, run it, write the reports."""
     from cacc import campaign as cp
     from cacc.reporting import write_all
 
     plan = cp.build_plan(controller, maneuvers, conditions, seeds=seeds,
-                         criteria=criteria, options=options)
+                         criteria=criteria, options=options,
+                         controller_block=controller_block)
     report = cp.run_campaign(plan, jobs=jobs, progress=progress)
     write_all(report, out)
     return report, out
@@ -82,6 +84,7 @@ class StressPage(Page):
         self.cp = cp
         self.report = self.baseline = self.out = None
         self.controller, self.options = "cthp", {}
+        self.lab_design = None  # set by the Controller Lab ("Stress test this")
         self.progress = _Progress()
         self.progress.tick.connect(self._tick)
 
@@ -200,8 +203,24 @@ class StressPage(Page):
                 it.setCheckState(Qt.Checked if it.data(Qt.UserRole) in keys
                                  else Qt.Unchecked)
 
+    def use_design(self, design) -> None:
+        """Select a Controller Lab design as the controller under test."""
+        self.lab_design = design
+        i = self.ctrl.findData("lab")
+        self.ctrl.setItemText(i, f"Controller Lab design: {design.name}")
+        self.ctrl.setCurrentIndex(i)
+
     def _controller(self) -> str | None:
         key = self.ctrl.currentData()
+        if key == "lab":
+            if self.lab_design is None:
+                QMessageBox.warning(self, "Stress test", "Build a design on the "
+                                    "Controller Lab page and press \"Stress test "
+                                    "this\" first.")
+                return None
+            from cacc.tfctrl import REF
+
+            return REF
         if key != "plugin":
             return key
         ref = self.plugin.text().strip().strip('"')
@@ -223,16 +242,20 @@ class StressPage(Page):
             QMessageBox.warning(self, "Stress test", "Tick at least one maneuver "
                                 "and one condition, and give at least one criterion.")
             return
-        self.controller, self.options = ctrl, {}
+        lab = self.ctrl.currentData() == "lab"
+        self.controller = ctrl
+        self.options = self.lab_design.options if lab else {}
+        block = self.lab_design.controller_block if lab else None
         self.run_btn.setEnabled(False)
         self.badge.set(None)
         self.status.setText("")
         self.bar.setRange(0, len(man) * len(cond) * self.seeds.value())
         self.bar.setValue(0)
         self.bar.show()
-        self.out = output_dir("stress", Path(ctrl.split(":")[-1]).stem or ctrl)
-        run_job(run_stress, ctrl, {}, man, cond, self.seeds.value(), crit,
-                self.jobs.value(), self.out, self.progress.tick.emit,
+        self.out = output_dir("stress", self.lab_design.name if lab
+                              else Path(ctrl.split(":")[-1]).stem or ctrl)
+        run_job(run_stress, ctrl, self.options, man, cond, self.seeds.value(), crit,
+                self.jobs.value(), self.out, self.progress.tick.emit, block,
                 on_done=self._done, on_error=self._failed)
 
     def _tick(self, done: int, total: int) -> None:

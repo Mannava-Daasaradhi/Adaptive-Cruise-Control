@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 import rclpy
+import yaml
 from rclpy.node import Node
 from rclpy.time import Time
 
@@ -26,6 +27,7 @@ class VehicleNode(Node):
         p = self.declare_parameters("", [
             ("index", 1),
             ("controller", "cthp"),
+            ("controller_options", "{}"),  # YAML: plugin / Lab design / FMU options
             ("sim_rate_hz", 100.0),
             ("beacon_rate_hz", 25.0),
             ("v0", 20.0),
@@ -39,7 +41,9 @@ class VehicleNode(Node):
                                  u_min=g["u_min"], u_max=g["u_max"])
         self.cprm = ControllerParams(kp=g["kp"], kd=g["kd"], kv=g["kv"],
                                      ka=g["ka"], h=g["h"], r=g["r"])
-        self.ctrl = make_controller(str(g["controller"]), self.cprm)
+        self.ctrl = make_controller(str(g["controller"]), self.cprm,
+                                    yaml.safe_load(g["controller_options"]) or {})
+        self._raw = bool(getattr(self.ctrl, "raw_inputs", False))
         self.dt = 1.0 / g["sim_rate_hz"]
         self.t = 0.0
         # initial condition: exact desired spacing at cruise speed v0
@@ -65,6 +69,7 @@ class VehicleNode(Node):
         self._last_now = None  # wall-clock timebase (see D-014)
         self._u = 0.0
         self._e = self._edot = self._uff = self._dv = 0.0
+        self._raw_kw = {}
         self.get_logger().info(
             f"vehicle {self.i}: {g['controller']} h={self.cprm.h}s tau={self.veh.tau}s")
 
@@ -96,9 +101,11 @@ class VehicleNode(Node):
         u = self._u
         e0, edot0, uff0, dv0 = self._e, self._edot, self._uff, self._dv
 
+        raw0 = self._raw_kw
+
         def f(x, xc):
             dx = vehicle_deriv(x, u, self.veh)
-            dxc = self.ctrl.deriv(xc, e0, edot0, uff0, dv0)
+            dxc = self.ctrl.deriv(xc, e0, edot0, uff0, dv0, **raw0)
             return dx, dxc
 
         n_sub = max(1, int(np.ceil(dt / self.dt)))
@@ -143,7 +150,11 @@ class VehicleNode(Node):
 
         # 3) input for the next interval
         u_ff = self.v2v_ff if self.ctrl.uses_v2v else 0.0
-        self._u = self.veh.clamp(self.ctrl.output(self.xc, e, e_dot, u_ff, dv))
+        gap = e + self.cprm.r + self.cprm.h * self.x[1]
+        self._raw_kw = (dict(gap=gap, v=float(self.x[1]), a=float(self.x[2]), t=self.t)
+                        if self._raw else {})
+        self._u = self.veh.clamp(self.ctrl.output(self.xc, e, e_dot, u_ff, dv,
+                                                  **self._raw_kw), self.x[1])
         self._e, self._edot, self._uff, self._dv = e, e_dot, u_ff, dv
 
         msg = VehicleState(index=self.i, t=self.t, position=float(self.x[0]),

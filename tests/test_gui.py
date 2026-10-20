@@ -34,8 +34,8 @@ def window(app):
 
 
 def test_window_builds_and_navigates(window):
-    assert window.stack.count() == 5
-    for key in ("audit", "evaluate", "stress", "simulate", "setup"):
+    assert window.stack.count() == 6
+    for key in ("audit", "evaluate", "lab", "stress", "simulate", "setup"):
         window.show_page(key)
         assert window.stack.currentWidget() is window.pages[key]
 
@@ -139,3 +139,24 @@ def test_stress_page_grid_baseline_and_telemetry(window, tmp_path):
     page.telemetry._pin()
     page.telemetry.show_run(res, "spoof again")
     assert page.telemetry.tiles["min_gap"].text().startswith("-")
+
+
+def test_controller_lab_live_analysis_inside_view_and_handoff(window):
+    from cacc.gui.page_lab import simulate
+
+    lab = window.pages["lab"]
+    lab.edits["e"].setText("0.2*s")  # improper: flagged, cannot be sent
+    lab.refresh()
+    assert lab.design is None and not lab.stress_btn.isEnabled()
+    assert "improper" in lab.state["e"].toolTip()
+    lab.edits["e"].setText("0.2/(h*s + 1)")
+    lab.refresh()
+    assert lab.report.string_stable and lab.report.internally_stable
+    assert "peak |Γ|" in lab.physics.toPlainText()
+    lab.show_inside(simulate(lab.design, "hard-brake", 0.2, 0.0, 0.05, 2))
+    assert lab.inside_status.text().startswith("min gap")
+    lab._send()
+    stress = window.pages["stress"]
+    assert window.stack.currentWidget() is stress
+    assert stress.ctrl.currentData() == "lab" and stress._controller() == "cacc.tfctrl:TFController"
+    assert stress.lab_design.options["blocks"]["e"] == "0.2/(h*s + 1)"

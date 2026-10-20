@@ -5,7 +5,9 @@
 
 ``params`` must be a ROS 2 params YAML applied to every node (physics,
 gains, channel impairments); per-node ``index`` / ``n_followers`` /
-``outfile`` are injected here and override the file.
+``outfile`` are injected here and override the file. ``controller`` given
+on the command line overrides the file's; a file written by
+``cacc ros2-params`` already names the controller (and its options).
 """
 
 from __future__ import annotations
@@ -42,7 +44,8 @@ def _spawn(context):
         nodes.append(
             Node(package="cacc_platoon", executable="vehicle_node",
                  name=f"vehicle_{i}", output="screen",
-                 parameters=common + [{"index": i, "controller": controller}]))
+                 parameters=common + [{"index": i, **(
+                     {"controller": controller} if controller else {})}]))
     return nodes
 
 
@@ -50,8 +53,9 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         DeclareLaunchArgument("n", default_value="6",
                               description="number of follower vehicles"),
-        DeclareLaunchArgument("controller", default_value="cthp",
-                              description="acc | cacc | cthp"),
+        DeclareLaunchArgument("controller", default_value="",
+                              description="acc | cacc | cthp | module:Name "
+                              "(default: the params file's, else cthp)"),
         DeclareLaunchArgument("params", default_value="",
                               description="ROS params YAML for all nodes"),
         DeclareLaunchArgument("outfile", default_value="/tmp/platoon_run.csv",

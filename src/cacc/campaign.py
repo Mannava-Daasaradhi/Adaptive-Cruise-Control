@@ -146,8 +146,14 @@ def compose(base: dict, maneuver: str, condition: str, controller: str) -> dict:
 def build_plan(controller: str = "cthp", maneuvers=None, conditions=None,
                seeds: int = 2, criteria=DEFAULT_CRITERIA, options=None,
                base: str | Path | dict | None = None,
-               name: str = "stress-campaign") -> TestPlan:
-    """A :class:`TestPlan` with one case per (maneuver, condition) cell."""
+               name: str = "stress-campaign",
+               controller_block: dict | None = None) -> TestPlan:
+    """A :class:`TestPlan` with one case per (maneuver, condition) cell.
+
+    ``controller_block`` overrides entries of the base scenario's
+    ``controller:`` block (e.g. the spacing policy of a Controller Lab
+    design); built-in families still take their own gains.
+    """
     maneuvers = list(maneuvers or PRESETS["quick"][0])
     conditions = list(conditions or PRESETS["quick"][1])
     if isinstance(base, dict):
@@ -156,6 +162,8 @@ def build_plan(controller: str = "cthp", maneuvers=None, conditions=None,
         path = Path(base) if base else BASE
         base_tree = yaml.safe_load(path.read_text(encoding="utf-8"))
         root = path.parent
+    if controller_block:
+        base_tree.setdefault("controller", {}).update(controller_block)
     if controller.lower() == "acc":  # nothing travels over V2V
         conditions = [c for c in conditions
                       if CONDITIONS[c][1] not in ("radio", "security")] or ["nominal"]

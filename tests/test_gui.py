@@ -34,8 +34,8 @@ def window(app):
 
 
 def test_window_builds_and_navigates(window):
-    assert window.stack.count() == 4
-    for key in ("audit", "evaluate", "simulate", "setup"):
+    assert window.stack.count() == 5
+    for key in ("audit", "evaluate", "stress", "simulate", "setup"):
         window.show_page(key)
         assert window.stack.currentWidget() is window.pages[key]
 
@@ -114,3 +114,28 @@ def test_scaffold_from_setup_page(window, tmp_path):
     page._scaffold()
     assert (tmp_path / "proj" / "plans" / "release_gate.yaml").is_file()
     assert page.run_gate.isEnabled()
+
+
+def test_stress_page_grid_baseline_and_telemetry(window, tmp_path):
+    from cacc.campaign import replay
+    from cacc.gui.page_stress import run_stress
+
+    ticks = []
+    report, _ = run_stress("cacc", {}, ["hard-brake"], ["nominal", "spoof"], 1,
+                           ["min_gap >= 1.0"], 1, tmp_path / "s",
+                           lambda d, n: ticks.append((d, n)))
+    assert ticks[-1] == (2, 2)
+    page = window.pages["stress"]
+    page._done((report, tmp_path / "s"))
+    assert (page.grid.rowCount(), page.grid.columnCount()) == (1, 2)
+    assert page.grid.item(0, 0).text().startswith("✓")
+    assert page.grid.item(0, 1).text().startswith("✕")
+    page._set_baseline()
+    page._done((report, tmp_path / "s"))  # same grid again: no ▲/▼ marks
+    assert "▲" not in page.grid.item(0, 1).text()
+    cell = report["campaign"]["grid"][0][1]
+    res = replay(report["cases"][1], "cacc", cell["worst_seed"])
+    page.telemetry.show_run(res, "spoof")
+    page.telemetry._pin()
+    page.telemetry.show_run(res, "spoof again")
+    assert page.telemetry.tiles["min_gap"].text().startswith("-")

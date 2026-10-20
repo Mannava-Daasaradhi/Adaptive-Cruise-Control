@@ -23,6 +23,7 @@ from typing import Callable
 
 import numpy as np
 
+from cacc.ev import energy_per_100km, regen_share
 from cacc.metrics import accel_rms, amplification_ratios
 from cacc.platoon import SimResult
 
@@ -131,6 +132,13 @@ METRICS: dict[str, Metric] = {
     "rms_accel": Metric(rms_accel, "m/s^2", "high",
                         "largest per-follower RMS acceleration "
                         "(comfort / energy proxy)"),
+    "energy_kwh_100km": Metric(energy_per_100km, "kWh/100km", "high",
+                               "highest follower battery consumption (EV "
+                               "model; default sedan without an ev block)"),
+    "regen_share": Metric(regen_share, "-", "low",
+                          "lowest follower share of braking energy "
+                          "recovered by regeneration (1 = no friction "
+                          "braking)"),
 }
 
 _OPS = {"<=": operator.le, ">=": operator.ge, "<": operator.lt,

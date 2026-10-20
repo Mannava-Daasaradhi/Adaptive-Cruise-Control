@@ -19,6 +19,14 @@ vehicle:
   u_max: 3.0
   act_delay: 0.0                # actuation dead time [s]; 0 or >= dt (D-028)
 
+ev:                             # optional electric powertrain (cacc.ev)
+  mass: 1900.0                  # [kg]
+  power_kw: 150.0               # traction limit P/(m v) - road load
+  regen_kw: 60.0                # energy only: friction brakes cover the rest
+  surface: dry                  # dry|wet|snow|ice -> mu 0.9|0.5|0.3|0.1 (or mu:)
+  # drag_area, crr, eta_drive, eta_regen, aux_kw, battery_kwh, soc0,
+  # draft_gain, draft_len: see EVParams; feed energy_kwh_100km / regen_share
+
 controller:
   kp: 0.009                     # Ma-family scale (Ploeg family ~0.2)
   kd: 0.7                       # Ploeg family only

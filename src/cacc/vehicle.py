@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from cacc.ev import EVParams
+
 #: number of dynamic states per vehicle: (p, v, a)
 N_STATES = 3
 
@@ -46,6 +48,7 @@ class VehicleParams:
     u_min: float = -8.0
     u_max: float = 3.0
     act_delay: float = 0.0
+    ev: EVParams | None = None
 
     def __post_init__(self):
         if self.tau <= 0.0:
@@ -53,9 +56,13 @@ class VehicleParams:
         if self.act_delay < 0.0:
             raise ValueError("vehicle act_delay must be >= 0")
 
-    def clamp(self, u: float) -> float:
-        """Saturate a commanded acceleration to the actuator limits."""
-        return float(min(max(u, self.u_min), self.u_max))
+    def clamp(self, u: float, v: float | None = None) -> float:
+        """Saturate a commanded acceleration to the actuator limits; with an
+        EV powertrain and the speed ``v`` also to motor power and grip."""
+        lo, hi = self.u_min, self.u_max
+        if self.ev is not None and v is not None:
+            lo, hi = self.ev.accel_bounds(v, lo, hi)
+        return float(min(max(u, lo), hi))
 
 
 def vehicle_deriv(state: np.ndarray, u: float, params: VehicleParams) -> np.ndarray:
@@ -64,5 +71,5 @@ def vehicle_deriv(state: np.ndarray, u: float, params: VehicleParams) -> np.ndar
     ``u`` is clamped to the actuator limits internally.
     """
     _, v, a = state
-    u = params.clamp(u)
+    u = params.clamp(u, v)
     return np.array([v, a, (u - a) / params.tau])

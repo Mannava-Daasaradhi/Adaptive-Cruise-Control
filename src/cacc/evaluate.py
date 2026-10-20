@@ -34,7 +34,7 @@ import itertools
 import logging
 import time
 import traceback
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -256,10 +256,11 @@ def _run_sweep(raw: dict, controller: str, options: dict,
         return {"error": traceback.format_exc(limit=6)}
 
 
-def evaluate(plan: TestPlan, jobs: int = 1) -> dict:
+def evaluate(plan: TestPlan, jobs: int = 1, progress=None) -> dict:
     """Run every (case, seed) and sweep of ``plan``; return the report dict.
 
     The report is plain JSON-able data; :mod:`cacc.reporting` renders it.
+    ``progress(done, total)``, if given, is called after every finished run.
     """
     metrics = tuple(dict.fromkeys(c.metric for c in plan.criteria))
     tasks = []
@@ -276,12 +277,18 @@ def evaluate(plan: TestPlan, jobs: int = 1) -> dict:
     log.info("plan %r: %d case(s) x %d seed(s), %d job(s) on %d worker(s)",
              plan.name, len(plan.cases), len(plan.seeds), len(tasks), jobs)
     t0 = time.perf_counter()
+    outputs: dict = {}
+    tick = progress or (lambda done, total: None)
     if jobs > 1 and len(tasks) > 1:
         with ProcessPoolExecutor(max_workers=jobs) as pool:
-            futs = [(key, pool.submit(fn, *args)) for key, fn, args in tasks]
-            outputs = {key: fut.result() for key, fut in futs}
+            futs = {pool.submit(fn, *args): key for key, fn, args in tasks}
+            for fut in as_completed(futs):
+                outputs[futs[fut]] = fut.result()
+                tick(len(outputs), len(tasks))
     else:
-        outputs = {key: fn(*args) for key, fn, args in tasks}
+        for key, fn, args in tasks:
+            outputs[key] = fn(*args)
+            tick(len(outputs), len(tasks))
 
     cases = [_case_report(plan, ci, case, outputs)
              for ci, case in enumerate(plan.cases)]

@@ -237,6 +237,40 @@ def cmd_metrics(args) -> int:
     return 0
 
 
+def cmd_stress(args) -> int:
+    from cacc import campaign as cp
+    from cacc.reporting import write_all
+
+    if args.list:
+        print("maneuvers:")
+        for k, (lab, *_rest) in cp.MANEUVERS.items():
+            print(f"  {k:18s} {lab}")
+        print("conditions:")
+        for k, (lab, group, _) in cp.CONDITIONS.items():
+            print(f"  {k:18s} [{group}] {lab}")
+        return 0
+    man, cond = cp.PRESETS[args.preset]
+    plan = cp.build_plan(
+        args.controller, maneuvers=args.maneuvers or man,
+        conditions=args.conditions or cond, seeds=args.seeds,
+        criteria=args.criterion or cp.DEFAULT_CRITERIA,
+        options=_options(args.option), base=args.base)
+    n = len(plan.cases)
+    print(f"cacc {cacc.__version__} · stress campaign: {args.controller}, "
+          f"{n} cell(s) x {len(plan.seeds)} seed(s) · {args.jobs} worker(s)",
+          file=sys.stderr)
+    report = cp.run_campaign(plan, jobs=args.jobs)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    outdir = Path(args.out) if args.out else (
+        Path("results") / "stress" / f"{plan.name}_{stamp}")
+    write_all(report, outdir)
+    print(cp.format_grid(report))
+    c = report["counts"]
+    print(f"\n{report['verdict']}: {c['PASS']} pass, {c['FAIL']} fail, "
+          f"{c['ERROR']} error · reports: {outdir}", file=sys.stderr)
+    return EXIT[report["verdict"]]
+
+
 def cmd_gui(args) -> int:
     from cacc.gui import main as gui_main
 
@@ -308,6 +342,27 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--name", help="project name (default: directory name)")
     i.add_argument("--force", action="store_true", help="overwrite files")
     i.set_defaults(fn=cmd_init)
+
+    st = sub.add_parser("stress", help="stress campaign: one controller vs "
+                        "a maneuver x condition grid (EV platoon)")
+    st.add_argument("-c", "--controller", default="cthp",
+                    help="acc | cacc | cthp | module:Name | file.py:Name")
+    st.add_argument("--preset", choices=("quick", "full"), default="quick")
+    st.add_argument("-m", "--maneuvers", nargs="+", help="override the preset")
+    st.add_argument("-k", "--conditions", nargs="+", help="override the preset")
+    st.add_argument("--criterion", action="append", metavar="RULE",
+                    help='e.g. "min_gap >= 2.0" (repeatable; default: '
+                    "min gap, TTC, energy)")
+    st.add_argument("--seeds", type=int, default=2)
+    st.add_argument("--base", help="base scenario YAML (default "
+                    "scenarios/ev_highway.yaml)")
+    st.add_argument("--option", action="append", default=[],
+                    metavar="KEY=VALUE", help="plugin constructor option")
+    st.add_argument("-j", "--jobs", type=int, default=1)
+    st.add_argument("-o", "--out", help="output directory")
+    st.add_argument("--list", action="store_true",
+                    help="list maneuvers and conditions, then exit")
+    st.set_defaults(fn=cmd_stress)
 
     m = sub.add_parser("metrics", help="list the metrics criteria can use")
     m.set_defaults(fn=cmd_metrics)

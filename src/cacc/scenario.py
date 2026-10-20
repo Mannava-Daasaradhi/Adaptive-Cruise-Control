@@ -17,6 +17,7 @@ import yaml
 
 from cacc.controllers import ControllerParams
 from cacc.estimation import AdaptConfig
+from cacc.ev import SURFACES, EVParams
 from cacc.network import LinkAttack
 from cacc.platoon import PlatoonConfig, Scenario, make_leader_profile
 from cacc.radar import RadarConfig
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 #: top-level blocks of the scenario YAML schema (docs/reference/R-11)
-SCENARIO_BLOCKS = ("name", "description", "platoon", "vehicle", "controller",
+SCENARIO_BLOCKS = ("name", "description", "platoon", "vehicle", "ev", "controller",
                    "network", "adaptation", "attack", "trust", "radar",
                    "leader", "sim")
 
@@ -64,8 +65,18 @@ def scenario_from_dict(raw: dict, default_name: str = "scenario") -> Scenario:
         extra["trust"] = TrustConfig(**raw["trust"])
     if "radar" in raw:  # modelled radar accel estimate (lag + noise)
         extra["radar"] = RadarConfig(**raw["radar"])
+    veh = dict(raw.get("vehicle") or {})
+    if raw.get("ev") is not None:  # electric powertrain + road grip
+        ev = dict(raw["ev"])
+        surface = ev.pop("surface", None)
+        if surface is not None:
+            if surface not in SURFACES:
+                raise ValueError(f"unknown ev surface {surface!r}; use one of "
+                                 f"{', '.join(SURFACES)}")
+            ev.setdefault("mu", SURFACES[surface])
+        veh["ev"] = EVParams(**ev)
     cfg = PlatoonConfig(
-        vehicle=VehicleParams(**raw.get("vehicle", {})),
+        vehicle=VehicleParams(**veh),
         control=ControllerParams(**raw.get("controller", {})),
         adapt=AdaptConfig(**raw.get("adaptation", {})),
         **raw.get("platoon", {}),

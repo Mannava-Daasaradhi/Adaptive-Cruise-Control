@@ -30,6 +30,7 @@ details in [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).
 pip install -e .                                  # Python >= 3.11, installs the `cacc` command
 cacc evaluate examples/plans/smoke.yaml -j 2      # built-in CTHP design       -> PASS
 cacc evaluate examples/plans/idm_acc.yaml -j 2    # commercial-style ACC plugin -> FAIL (string-unstable)
+cacc stress -c cthp --preset full -j 6            # EV platoon: 6 maneuvers x 15 conditions grid
 cacc sweep scenarios/leader_brake.yaml -c acc     # measured |Γ(jω)| per hop
 cacc calibrate examples/data/synthetic_openacc_platoon.csv   # digital twin of each car's ACC from a drive log
 cacc audit examples/data/synthetic_openacc_platoon.csv       # the customer deliverable: HTML report + release gates
@@ -42,6 +43,8 @@ cacc init my-acc                                  # scaffold your own controller
 |---|---|
 | **Bring your own controller** — any Python class as `file.py:Class` or `pkg.mod:Class`; nonlinear laws get raw gap/speed | `src/cacc/plugins.py` |
 | **Test plans** — base scenario × named cases × condition matrix × seeds, criteria like `"min_ttc >= 2.0"` | `src/cacc/evaluate.py`, `examples/plans/` |
+| **Stress campaigns** — one controller against a maneuver × condition grid (emergency stop, stop-and-go, traffic wave… × latency, loss, spoofing, wet/snow road, derated battery, slow brakes); CACC Studio's *Stress test* page shows it as a heat map, replays any cell as telemetry and diffs against a baseline run | `src/cacc/campaign.py`, `src/cacc/gui/page_stress.py` |
+| **EV powertrain** — speed-dependent motor-power and tyre-grip limits, battery energy with regen and drafting, `energy_kwh_100km` / `regen_share` criteria | `src/cacc/ev.py` |
 | **Black-box string stability** — multisine sweep measures per-hop \|Γ(jω)\| without a transfer function; matches theory to 1e-4 | `src/cacc/stringstab.py` |
 | **Impairment-faithful V2V** — delay with jitter, independent or bursty (Gilbert–Elliott) loss with packet inter-reception stats, Ma-2025 value noise, time-varying/spatial channel quality, spoofing attacks + a physics-consistency gate checked against a modelled (late, noisy) radar | `src/cacc/network.py`, `trust.py`, `radar.py` |
 | **Evidence** — `report.json` (per seed, provenance), `junit.xml`, `summary.md`, resolved `cases/*.yaml`; exit 0/1/2 | `src/cacc/reporting.py` |
@@ -93,5 +96,5 @@ certification harness (`scripts/certify.py`, D-018). **Car simulation:** Gazebo 
 5–10 vehicle platoon under CACC, enabling smaller gaps (higher road capacity) and lower fuel use
 vs ACC — robust to V2V delay.
 
-**Tests:** `python -m pytest -q` (197 tests, about 3 minutes). **Licence:** Apache-2.0.
+**Tests:** `python -m pytest -q` (212 tests). **Licence:** Apache-2.0.
 **What changed after the 2026-10-08 review, and why:** [`D-028`](docs/decisions/D-028-realism-fixes-from-the-critique.md).

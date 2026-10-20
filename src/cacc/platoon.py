@@ -333,12 +333,12 @@ class PlatoonSim:
                 u_ff = 0.0
             if self._raw:
                 raw = dict(gap=p_prev - p - veh.length, v=v, a=a, t=t)
-                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv, **raw))
+                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv, **raw), v)
                 if self.nc:
                     dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(
                         xc, e, e_dot, u_ff, dv, **raw)
             else:
-                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv))
+                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv), v)
                 if self.nc:
                     dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(xc, e, e_dot, u_ff, dv)
             u_act = u if self.act_lines is None else self.act_lines[i].read(t)

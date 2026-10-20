@@ -1,0 +1,47 @@
+# Base scenario of the EV stress campaign (cacc stress / CACC Studio "Stress test").
+# Five electric sedans in a platoon at 90 km/h on a dry highway, a decent
+# V2V link (50 ms, Ma-2025 noise at rho = 10). The campaign layers one
+# maneuver and one condition on top of this per grid cell; the controller
+# block is replaced by the chosen controller family's gains.
+name: ev_highway
+description: >
+  Electric-sedan platoon at 90 km/h on a dry highway with a decent V2V link;
+  the base every stress-campaign cell starts from.
+
+platoon:
+  n_followers: 5
+  v0: 25.0
+
+vehicle:
+  tau: 0.2            # electric drive responds faster than a combustion driveline
+  length: 4.8
+  u_min: -9.0
+  u_max: 4.0
+
+ev:
+  mass: 1900.0
+  power_kw: 150.0
+  regen_kw: 60.0
+  surface: dry
+
+controller:
+  kp: 0.2
+  kd: 0.7
+  h: 0.7
+  r: 2.5
+
+network:
+  delay: 0.05
+  loss_prob: 0.0
+  msg_rate: null
+  noise_rho: 10.0
+  noise_rate: 100.0
+
+leader:
+  profile: constant
+  value: 0.0
+
+sim:
+  dt: 0.01
+  t_final: 60.0
+  seed: 1

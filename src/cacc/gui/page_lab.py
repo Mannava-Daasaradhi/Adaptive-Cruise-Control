@@ -12,6 +12,8 @@ relative speed, the V2V feedforward). Every edit re-draws, live:
   follower's command split into what each block contributed, and where the
   actuator clipped it.
 
+"Auto-tune" searches the numbers in your blocks for the shortest headway
+that is string-stable and passes the key stress cells (cacc.autotune);
 "Stress test this" sends the design to the Stress test page.
 """
 
@@ -52,6 +54,17 @@ def simulate(design: tc.Design, maneuver: str, tau: float, act_delay: float,
     sc = scenario_from_dict(tree, default_name=maneuver)
     res = PlatoonSim(sc.config, tc.REF, sc.leader, design.options).run()
     return res, tc.contributions(res, design, follower)
+
+
+def run_tune(design: tc.Design, tau: float, act_delay: float, theta: float):
+    """Background job: :func:`cacc.autotune.tune` on all but one core."""
+    import os
+
+    from cacc.autotune import tune
+
+    return tune(design, tau=tau, act_delay=act_delay,
+                thetas=tuple(sorted({theta, max(theta, 0.15)})),
+                jobs=max(1, (os.cpu_count() or 2) - 1))
 
 
 def _spin(lo, hi, val, step, dec=2, suffix=""):
@@ -115,6 +128,13 @@ class LabPage(Page):
             b = QPushButton(text)
             b.clicked.connect(fn)
             row2.addWidget(b)
+        self.tune_btn = QPushButton("Auto-tune…")
+        self.tune_btn.setToolTip("Search the numbers in your blocks for the shortest "
+                                 "headway that stays string-stable (up to 150 ms "
+                                 "V2V delay) and passes hard brake, wet emergency "
+                                 "stop, 300 ms latency and a cut-in")
+        self.tune_btn.clicked.connect(self._tune)
+        row2.addWidget(self.tune_btn)
         self.stress_btn = primary_button("Stress test this →")
         self.stress_btn.clicked.connect(self._send)
         row2.addWidget(self.stress_btn)
@@ -379,6 +399,28 @@ class LabPage(Page):
 
             Path(p).write_text(tc.to_matlab(self.design, self.tau.value(),
                                             self.delay.value()), encoding="utf-8")
+
+    def _tune(self) -> None:
+        if self.design is None:
+            return
+        self.tune_btn.setEnabled(False)
+        self.tune_btn.setText("tuning…")
+        run_job(run_tune, self.design, self.tau.value(), self.act.value(),
+                self.delay.value(), on_done=self._tuned, on_error=self._tune_failed)
+
+    def _tune_failed(self, msg: str) -> None:
+        self.tune_btn.setEnabled(True)
+        self.tune_btn.setText("Auto-tune…")
+        QMessageBox.critical(self, "Auto-tune", msg)
+
+    def _tuned(self, res) -> None:
+        self.tune_btn.setEnabled(True)
+        self.tune_btn.setText("Auto-tune…")
+        if res.passed or res.feasible:
+            self.load(res.design)
+        QMessageBox.information(self, "Auto-tune", res.summary()
+                                + ("" if res.passed else
+                                   "\n\n" + "\n".join(res.log)))
 
     def _send(self) -> None:
         if self.design is not None:

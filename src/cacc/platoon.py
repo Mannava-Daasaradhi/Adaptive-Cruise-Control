@@ -14,82 +14,24 @@ delay term in this DDE and keeps the integrator an explicit fixed-step RK4.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Callable
 
 import numpy as np
 
-from cacc.controllers import ControllerParams, is_plugin_kind, make_controller
-from cacc.estimation import (AdaptConfig, ChannelEstimator, GainScheduler,
-                             HeadwayAdapter)
-from cacc.network import LinkAttack, V2VLink
-from cacc.qos_map import QoSMap
-from cacc.radar import DelayLine, RadarConfig, RadarSensor
-from cacc.trust import TrustConfig, TrustGate
-from cacc.vehicle import N_STATES, VehicleParams
+from cacc.aeb import AEB
+from cacc.controllers import is_plugin_kind, make_controller
+from cacc.estimation import ChannelEstimator, GainScheduler, HeadwayAdapter
+from cacc.faults import Faults
+from cacc.network import V2VLink
+from cacc.qos_map import QoSMap, link_schedules
+from cacc.radar import DelayLine, RadarSensor
+from cacc.simtypes import PlatoonConfig, Scenario, SimResult  # noqa: F401 (re-export)
+from cacc.traffic import Traffic, snapshot
+from cacc.trust import TrustGate
+from cacc.vehicle import N_STATES
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class PlatoonConfig:
-    """Full configuration of one platoon simulation."""
-
-    n_followers: int = 5
-    v0: float = 20.0  # initial platoon cruise speed [m/s]
-    vehicle: VehicleParams = VehicleParams()
-    control: ControllerParams = ControllerParams()
-    delay: float = 0.1  # V2V latency theta [s] (minimum latency with jitter)
-    loss_prob: float = 0.0
-    msg_rate: float | None = None  # None = continuous link
-    delay_jitter: float = 0.0  # mean extra latency per message [s] (sampled)
-    loss_burst: float | None = None  # mean loss-burst length [msgs] (sampled)
-    noise_rho: float | None = None  # multiplicative channel noise (Ma 2025)
-    noise_gammas: tuple[float, ...] | None = None  # None = paper's 16-bit channel
-    noise_rate: float = 100.0  # noise-factor hold rate [Hz]
-    rho_schedule: tuple | None = None  # [(t, rho), ...] time-varying channel
-    qos_map: tuple | None = None  # [(x0, x1, rho), ...] spatial channel map (D-021)
-    adapt: AdaptConfig = AdaptConfig()  # QoS-adaptive outer loop (D-016)
-    attack: LinkAttack | None = None  # malicious V2V injection (D-022)
-    trust: TrustConfig = TrustConfig()  # physics-consistency gate (D-022)
-    radar: RadarConfig = RadarConfig()  # radar accel estimate (ideal by default)
-    dt: float = 0.01
-    t_final: float = 40.0
-    seed: int = 1
-
-
-@dataclass
-class SimResult:
-    """Time series produced by :meth:`PlatoonSim.run` (S samples).
-
-    Column 0 of ``pos/vel/acc`` is the leader; columns ``1..n`` the followers.
-    ``err`` and ``u`` have one column per follower.
-    """
-
-    t: np.ndarray  # (S,)
-    pos: np.ndarray  # (S, n+1)
-    vel: np.ndarray  # (S, n+1)
-    acc: np.ndarray  # (S, n+1) leader column = commanded a0(t)
-    err: np.ndarray  # (S, n) spacing errors
-    u: np.ndarray  # (S, n) commanded accelerations (saturated)
-    controller: str
-    config: PlatoonConfig
-    h: np.ndarray | None = None  # (S, n) per-follower headway (adaptive runs)
-    rho_hat: np.ndarray | None = None  # (S, n) channel estimates (NaN = none)
-    gains: np.ndarray | None = None  # (S, n, 2) live (kp, kv) when re-tuning
-    trust: np.ndarray | None = None  # (S, n) trust weight g (gated runs, D-022)
-    ff_inj: np.ndarray | None = None  # (S, n) injected feedforward u_ff_eff - a_radar
-    link_stats: list | None = None  # per-link sent/delivered/max PIR (sampled)
-
-
-@dataclass
-class Scenario:
-    """A named simulation case: configuration + leader maneuver."""
-
-    name: str
-    config: PlatoonConfig
-    leader: Callable[[float], float]
-    description: str = ""
 
 
 class PlatoonSim:
@@ -124,6 +66,9 @@ class PlatoonSim:
         self.ctrls = [make_controller(self.kind, config.control, controller_options)
                       for _ in range(n)]
         self.nc = self.ctrls[0].n_states
+        for i, c in enumerate(self.ctrls):  # e.g. a hardware-in-the-loop car
+            if hasattr(c, "bind_car"):
+                c.bind_car(i + 1)
         # plugins may ask for the raw measurements (gap, v, a, t) — D-025
         self._raw = bool(getattr(self.ctrls[0], "raw_inputs", False))
         # the simulator reads these once, from the first follower's law
@@ -143,7 +88,8 @@ class PlatoonSim:
         if config.qos_map is not None:
             base = config.noise_rho if config.noise_rho is not None else 50.0
             self.qos_map = QoSMap(config.qos_map, rho_base=base)
-            link_scheds = self._link_rho_schedules(config, self.qos_map)
+            link_scheds = link_schedules(self.qos_map, config, self.leader_accel,
+                                         self._pitch(config.v0))
         # link i (0-based) carries u_{i-1} -> follower i; leader feeds link 0.
         # A malicious node (D-022) tampers only with its target link.
         atk = config.attack
@@ -190,6 +136,9 @@ class PlatoonSim:
                 raise ValueError("vehicle act_delay must be 0 or >= dt")
             self.act_lines = [DelayLine(config.vehicle.act_delay)
                               for _ in range(n)]
+        self.traffic = Traffic.build(config)  # mixed traffic, None = pure platoon
+        self.faults = Faults.build(config)  # sensor / powertrain faults
+        self.aeb = AEB(config.aeb, n) if config.aeb.enabled else None
         # --- QoS-adaptive outer loop (D-016): per-follower h, estimators ---
         c = config.control
         self.h_i = np.full(n, c.h)
@@ -240,6 +189,7 @@ class PlatoonSim:
         self._io_ffinj = np.zeros(n)  # injected feedforward u_ff_eff - a_radar
         self._io_v2v = np.zeros(n)  # pre-gate V2V value (lag-matched gate)
         self._rho_used = np.full(n, np.nan)  # sender-reported rho in use
+        self._io_radar = np.zeros((n, 2))  # true (gap, closing) to what is ahead
 
     # ---------------------------------------------------------------- state
     def initial_state(self) -> np.ndarray:
@@ -247,11 +197,16 @@ class PlatoonSim:
         cfg = self.cfg
         x = np.zeros(self.n_states)
         x[0] = 0.0  # leader position
-        x[1] = cfg.v0
+        x[1] = cfg.v0 if cfg.lead_v0 is None else cfg.lead_v0
         gap = self._pitch(cfg.v0)
+        L, p = cfg.vehicle.length, 0.0
         for i in range(cfg.n_followers):
             b = 2 + i * self.block
-            x[b + 0] = -(i + 1) * gap  # p_i
+            if i == 0 and cfg.gap0 is not None:  # a scene set by the scenario
+                p -= cfg.gap0 + L
+            else:
+                p -= gap if self.traffic is None else self.traffic.gap0(i, cfg.v0, gap - L) + L
+            x[b + 0] = p  # p_i
             x[b + 1] = cfg.v0
             x[b + 2] = 0.0  # a_i
             # controller states (CACC xi) start at 0 = steady-state input
@@ -268,25 +223,6 @@ class PlatoonSim:
         gap = float(eq(v)) if eq is not None else c.r + c.h * v
         return gap + self.cfg.vehicle.length
 
-    def _link_rho_schedules(self, config: PlatoonConfig, qmap: QoSMap):
-        """Per-link rho step schedules from the spatial map (D-021).
-
-        Each link's channel is driven by the position of its follower along a
-        nominal (maneuver-integrated) trajectory: follower ``i`` trails the
-        leader by ``(i+1)`` standoff gaps, so it enters a patch that much
-        later. Small closed-loop spacing ripples don't change which (large)
-        patch a vehicle is in, so the nominal trajectory is exact enough.
-        """
-        n, dt = config.n_followers, config.dt
-        gap0 = self._pitch(config.v0)
-        tg = np.arange(0.0, config.t_final + dt, dt)
-        a0 = np.array([self.leader_accel(float(t)) for t in tg])
-        v = config.v0 + np.concatenate(
-            [[0.0], np.cumsum(0.5 * (a0[1:] + a0[:-1]) * dt)])
-        x_lead = np.concatenate([[0.0], np.cumsum(0.5 * (v[1:] + v[:-1]) * dt)])
-        return [qmap.time_schedule(tg, x_lead - (i + 1) * gap0)
-                for i in range(n)]
-
     # ------------------------------------------------------------- dynamics
     def _deriv(self, t: float, x: np.ndarray) -> np.ndarray:
         """Full state derivative; also fills the _io_* scratch buffers."""
@@ -294,8 +230,8 @@ class PlatoonSim:
         c, veh = cfg.control, cfg.vehicle
         dx = np.zeros_like(x)
         a0 = self.leader_accel(t)
-        dx[0] = x[1]
-        dx[1] = a0
+        dx[0] = max(x[1], 0.0)  # brakes hold a stopped car: no reversing
+        dx[1] = a0 if x[1] > 0.0 or a0 > 0.0 else 0.0
         p_prev, v_prev = x[0], x[1]
         a_prev = a0  # the leader realizes its commanded profile exactly
         u_live_prev = a0  # what the predecessor is commanding right now
@@ -304,10 +240,20 @@ class PlatoonSim:
             p, v, a = x[b], x[b + 1], x[b + 2]
             xc = x[b + 3 : b + 3 + self.nc]
             h_i = self.h_i[i]  # per-follower headway (adaptive runs, D-016)
-            e = (p_prev - p - veh.length) - (c.r + h_i * v)
-            e_dot = v_prev - v - h_i * a
-            dv = v_prev - v
-            if ctrl.uses_v2v:
+            linked, tf = True, self.traffic
+            if tf is not None:  # a cut-in car ahead, or a human (no V2V)
+                p_prev, v_prev, a_prev, linked = tf.front(
+                    i, t, p_prev, v_prev, a_prev, i > 0 and tf.human[i - 1])
+            gap, closing = p_prev - p - veh.length, v - v_prev
+            self._io_radar[i] = gap, closing
+            fl = self.faults
+            if fl is not None:  # what the radar reports, and whether V2V arrives
+                gap, closing = fl.sense(i, t, gap, closing)
+                linked = linked and fl.v2v_ok(i, t)
+            e = gap - (c.r + h_i * v)
+            dv = -closing
+            e_dot = dv - h_i * a
+            if ctrl.uses_v2v and linked:
                 link = self.links[i]
                 if link.passthrough:
                     u_ff = a_prev if ctrl.ff_signal == "a" else u_live_prev
@@ -331,20 +277,31 @@ class PlatoonSim:
                     self._io_ffinj[i] = u_ff - a_radar
             else:
                 u_ff = 0.0
-            if self._raw:
-                raw = dict(gap=p_prev - p - veh.length, v=v, a=a, t=t)
-                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv, **raw), v)
+            lo, hi = veh.bounds(v)
+            if fl is not None:
+                lo, hi = fl.bounds(i, t, lo, hi)
+            human = tf is not None and tf.human[i]
+            if human:
+                u = tf.human_u(i, t, gap, v, v_prev, a_prev)
+            elif self._raw:
+                raw = dict(gap=gap, v=v, a=a, t=t)
+                u = ctrl.output(xc, e, e_dot, u_ff, dv, **raw)
                 if self.nc:
                     dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(
                         xc, e, e_dot, u_ff, dv, **raw)
             else:
-                u = veh.clamp(ctrl.output(xc, e, e_dot, u_ff, dv), v)
+                u = ctrl.output(xc, e, e_dot, u_ff, dv)
                 if self.nc:
                     dx[b + 3 : b + 3 + self.nc] = ctrl.deriv(xc, e, e_dot, u_ff, dv)
+            if self.aeb is not None and not human:  # radar-only safety layer
+                u = self.aeb.command(i, u, gap, closing, v, v_prev, a_prev, lo)
+            u = float(min(max(u, lo), hi))
             u_act = u if self.act_lines is None else self.act_lines[i].read(t)
-            dx[b] = v
-            dx[b + 1] = a
-            dx[b + 2] = (u_act - a) / veh.tau
+            u_eff = u_act - (0.0 if fl is None else fl.drag(i, t, v))
+            # standstill: the brakes hold the car, they never drive it backwards
+            dx[b] = max(v, 0.0)
+            dx[b + 1] = 0.0 if v <= 0.0 and a < 0.0 else a
+            dx[b + 2] = ((0.0 if v <= 0.0 and u_eff <= 0.0 else u_eff) - a) / veh.tau
             self._io_e[i] = e
             self._io_edot[i] = e_dot
             self._io_u[i] = u
@@ -374,11 +331,15 @@ class PlatoonSim:
             gains_arr[:] = (cfg.control.kp, cfg.control.kv)
         gating = self.gates is not None
         trust_arr = np.ones((S, n)) if gating else None
+        aeb_arr = np.zeros((S, n), dtype=np.int8) if self.aeb is not None else None
         ffinj_arr = np.zeros((S, n)) if gating else None
         est_every = max(1, round(1.0 / (cfg.adapt.est_rate * dt))) if adapting else 0
         lag = round(self._theta_hat / dt)
 
         x = self.initial_state()
+        tf = self.traffic
+        cut_rec = ([np.full((S, 3), np.nan) for _ in tf.cars] if tf is not None
+                   else [])
         log.info(
             "sim start: controller=%s n=%d h=%.2fs delay=%.3fs loss=%.2f mode=%s "
             "dt=%g t_final=%g",
@@ -397,9 +358,20 @@ class PlatoonSim:
                 pos[k, i + 1], vel[k, i + 1], acc[k, i + 1] = x[b], x[b + 1], x[b + 2]
             err[k] = self._io_e
             u_arr[k] = self._io_u
+            if tf is not None:
+                tf.step(t, pos[k], vel[k], acc[k])
+                for rec, row in zip(cut_rec, snapshot(tf, t), strict=True):
+                    rec[k] = row
             if gating:
                 trust_arr[k] = self._io_g
                 ffinj_arr[k] = self._io_ffinj
+            for i in range(n if self.aeb is not None or self.faults is not None else 0):
+                g_true, c_true = self._io_radar[i]
+                if self.faults is not None:
+                    self.faults.record(i, t, g_true, c_true)
+                if self.aeb is not None:
+                    aeb_arr[k, i] = self.aeb.level[i]
+                    self.aeb.observe(i, c_true, vel[k, i + 1])
             # delay-line histories (accepted states only): radar sees the
             # predecessor's realized acceleration, the echo keeps the pre-gate
             # V2V value, the actuator keeps the saturated command
@@ -477,7 +449,11 @@ class PlatoonSim:
                  else None)
         return SimResult(t_arr, pos, vel, acc, err, u_arr, self.kind, cfg,
                          h=h_arr, rho_hat=rho_arr, gains=gains_arr,
-                         trust=trust_arr, ff_inj=ffinj_arr, link_stats=stats)
+                         trust=trust_arr, ff_inj=ffinj_arr, link_stats=stats,
+                         aeb=aeb_arr,
+                         traffic=None if tf is None else {
+                             "humans": list(tf.cfg.humans),
+                             "cut_ins": tf.tracks(t_arr, cut_rec)})
 
 
 # ------------------------------------------------------------ scenario I/O

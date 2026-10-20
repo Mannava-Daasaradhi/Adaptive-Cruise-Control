@@ -15,12 +15,15 @@ from pathlib import Path
 
 import yaml
 
+from cacc.aeb import AEBConfig
 from cacc.controllers import ControllerParams
 from cacc.estimation import AdaptConfig
 from cacc.ev import SURFACES, EVParams
+from cacc.faults import parse as parse_faults
 from cacc.network import LinkAttack
 from cacc.platoon import PlatoonConfig, Scenario, make_leader_profile
 from cacc.radar import RadarConfig
+from cacc.traffic import TrafficConfig
 from cacc.trust import TrustConfig
 from cacc.vehicle import VehicleParams
 
@@ -30,7 +33,7 @@ log = logging.getLogger(__name__)
 #: top-level blocks of the scenario YAML schema (docs/reference/R-11)
 SCENARIO_BLOCKS = ("name", "description", "platoon", "vehicle", "ev", "controller",
                    "network", "adaptation", "attack", "trust", "radar",
-                   "leader", "sim")
+                   "traffic", "aeb", "faults", "leader", "sim")
 
 
 def load_scenario(path: str | Path) -> Scenario:
@@ -65,6 +68,12 @@ def scenario_from_dict(raw: dict, default_name: str = "scenario") -> Scenario:
         extra["trust"] = TrustConfig(**raw["trust"])
     if "radar" in raw:  # modelled radar accel estimate (lag + noise)
         extra["radar"] = RadarConfig(**raw["radar"])
+    if raw.get("traffic"):  # human drivers / cut-ins (mixed traffic)
+        extra["traffic"] = TrafficConfig.from_dict(raw["traffic"])
+    if raw.get("aeb"):  # emergency-braking safety layer
+        extra["aeb"] = AEBConfig(**raw["aeb"])
+    if raw.get("faults"):  # sensor / powertrain faults
+        extra["faults"] = parse_faults(raw["faults"])
     veh = dict(raw.get("vehicle") or {})
     if raw.get("ev") is not None:  # electric powertrain + road grip
         ev = dict(raw["ev"])

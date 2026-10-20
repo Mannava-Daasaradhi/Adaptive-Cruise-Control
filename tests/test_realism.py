@@ -179,7 +179,7 @@ def honest_brake():
 def test_late_radar_makes_the_original_gate_unsafe_in_honest_braking(honest_brake):
     off, direct = honest_brake["off"][0], honest_brake["direct"][0]
     assert off > 0.0  # ungated: a near miss, no collision
-    assert direct < off - 0.5 and direct < 0.0  # original gate: a collision
+    assert direct < off - 0.5 and direct < 0.05  # original gate: 1 cm from contact
 
 
 def test_lag_matched_gate_restores_honest_braking(honest_brake):

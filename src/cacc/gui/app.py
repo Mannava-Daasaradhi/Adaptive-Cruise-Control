@@ -1,4 +1,4 @@
-"""CACC Studio main window: sidebar navigation over the six pages."""
+"""CACC Studio main window: sidebar navigation over the pages."""
 
 from __future__ import annotations
 
@@ -12,11 +12,12 @@ from cacc.gui.page_evaluate import EvaluatePage
 from cacc.gui.page_lab import LabPage
 from cacc.gui.page_setup import SetupPage
 from cacc.gui.page_simulate import SimulatePage
+from cacc.gui.page_standards import StandardsPage
 from cacc.gui.page_stress import StressPage
 
 NAV = (("setup", "  Start here"), ("audit", "  Audit a drive log"),
        ("evaluate", "  Evaluate a controller"), ("lab", "  Controller Lab"),
-       ("stress", "  Stress test"),
+       ("stress", "  Stress test"), ("standards", "  Standards"),
        ("simulate", "  Live platoon"))
 
 
@@ -28,7 +29,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLESHEET)
         self.pages = {"setup": SetupPage(), "audit": AuditPage(),
                       "evaluate": EvaluatePage(), "lab": LabPage(),
-                      "stress": StressPage(),
+                      "stress": StressPage(), "standards": StandardsPage(),
                       "simulate": SimulatePage()}
 
         side = QWidget()

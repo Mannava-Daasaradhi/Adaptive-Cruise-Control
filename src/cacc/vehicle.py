@@ -56,12 +56,17 @@ class VehicleParams:
         if self.act_delay < 0.0:
             raise ValueError("vehicle act_delay must be >= 0")
 
-    def clamp(self, u: float, v: float | None = None) -> float:
-        """Saturate a commanded acceleration to the actuator limits; with an
-        EV powertrain and the speed ``v`` also to motor power and grip."""
+    def bounds(self, v: float | None = None) -> tuple[float, float]:
+        """Achievable ``(u_min, u_max)``; with an EV powertrain and the speed
+        ``v`` also limited by motor power and grip."""
         lo, hi = self.u_min, self.u_max
         if self.ev is not None and v is not None:
             lo, hi = self.ev.accel_bounds(v, lo, hi)
+        return lo, hi
+
+    def clamp(self, u: float, v: float | None = None) -> float:
+        """Saturate a commanded acceleration to :meth:`bounds`."""
+        lo, hi = self.bounds(v)
         return float(min(max(u, lo), hi))
 
 

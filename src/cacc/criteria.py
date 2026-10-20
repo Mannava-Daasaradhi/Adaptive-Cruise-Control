@@ -23,9 +23,11 @@ from typing import Callable
 
 import numpy as np
 
+from cacc.energy import harsh_share, range_loss_pct, rms_jerk
 from cacc.ev import energy_per_100km, regen_share
 from cacc.metrics import accel_rms, amplification_ratios
 from cacc.platoon import SimResult
+from cacc.traffic import front_tracks
 
 #: speeds below this are ignored by the time-gap metric [m/s]
 STANDSTILL_SPEED = 1.0
@@ -34,8 +36,9 @@ MIN_CLOSING_SPEED = 0.1
 
 
 def _gaps(res: SimResult) -> np.ndarray:
-    """Bumper-to-bumper gaps, shape (S, n)."""
-    return np.diff(-res.pos, axis=1) - res.config.vehicle.length
+    """Bumper-to-bumper gaps to whatever is really ahead (cut-in cars
+    included), shape (S, n) or (S, n + cut-ins)."""
+    return front_tracks(res)[0]
 
 
 def min_gap(res: SimResult) -> float:
@@ -47,15 +50,15 @@ def min_time_gap(res: SimResult) -> float:
     moving = v > STANDSTILL_SPEED
     if not moving.any():
         return math.inf
-    return float((_gaps(res)[moving] / v[moving]).min())
+    return float((_gaps(res)[:, :v.shape[1]][moving] / v[moving]).min())
 
 
 def min_ttc(res: SimResult) -> float:
-    closing = res.vel[:, 1:] - res.vel[:, :-1]  # follower faster than lead
+    gaps, closing = front_tracks(res)  # closing > 0: faster than what is ahead
     mask = closing > MIN_CLOSING_SPEED
     if not mask.any():
         return math.inf
-    return float((np.maximum(_gaps(res)[mask], 0.0) / closing[mask]).min())
+    return float((np.maximum(gaps[mask], 0.0) / closing[mask]).min())
 
 
 def peak_spacing_error(res: SimResult) -> float:
@@ -139,6 +142,15 @@ METRICS: dict[str, Metric] = {
                           "lowest follower share of braking energy "
                           "recovered by regeneration (1 = no friction "
                           "braking)"),
+    "range_loss_pct": Metric(range_loss_pct, "%", "high",
+                             "worst follower's extra consumption over the "
+                             "lead car (range it loses; < 0 = drafting gain)"),
+    "rms_jerk": Metric(rms_jerk, "m/s^3", "high",
+                       "largest per-follower RMS jerk (ride comfort)"),
+    "harsh_share": Metric(harsh_share, "-", "high",
+                          "largest share of the run a follower spends beyond "
+                          "the ISO 15622 comfort limits (jerk 2.5 m/s^3, "
+                          "-3.5 / +2 m/s^2)"),
 }
 
 _OPS = {"<=": operator.le, ">=": operator.ge, "<": operator.lt,

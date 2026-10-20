@@ -143,4 +143,20 @@ class Telemetry(QWidget):
             ax.set_ylabel(ylab, fontsize=8, color=MUTED)
         axes[4].set_ylim(-0.05, 1.05)
         axes[-1].set_xlabel("time [s]", fontsize=8, color=MUTED)
+        self._cursors = [ax.axvline(self.res.t[0], color=RED, lw=0.8, alpha=0.0)
+                         for ax in axes]
         self.plot.draw()
+
+    def set_cursor(self, t: float) -> None:
+        """Follow the 3-D replay: a vertical line at simulation time ``t``
+        (redrawn at most ~8 times a second)."""
+        import time
+
+        now = time.monotonic()
+        if not getattr(self, "_cursors", None) or now - getattr(self, "_drawn", 0) < 0.12:
+            return
+        self._drawn = now
+        for ln in self._cursors:
+            ln.set_xdata([t, t])
+            ln.set_alpha(0.7)
+        self.plot.canvas.draw_idle()

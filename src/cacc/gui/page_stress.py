@@ -2,7 +2,10 @@
 
 Pick the controller, tick maneuvers and conditions, run. The grid fills in
 with a verdict per cell and the value of the criterion that came closest to
-failing; click a cell to replay its worst seed in the telemetry panel. "Set
+failing; click a cell to replay its worst seed: trace plots, a 3-D replay, the root cause of a
+failure with fixes tried on the same seed, the breaking point of each
+stress axis, and its energy and comfort cost. "Versions" keeps named runs
+and flags every regression between them. "Set
 as baseline" keeps the current grid, and the next run marks every cell that
 got better (▲) or worse (▼) against it, so a gain change or a different
 controller reads as a diff.
@@ -16,15 +19,19 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout,
+                               QHeaderView,
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
-                               QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from cacc.gui.common import (Page, VerdictBadge, card, label, open_path, output_dir,
                              primary_button, run_job)
+from cacc.gui.stress_insight import BreakPanel, WhyPanel
+from cacc.gui.stress_release import EnergyPanel, VersionsPanel
 from cacc.gui.stress_telemetry import Telemetry
+from cacc.gui.view3d import Replay3DPanel
 
 CONTROLLERS = (("cthp", "CTHP CACC — Ma 2025 gains"),
                ("cacc", "CACC — radar + V2V (Ploeg 2014)"),
@@ -37,14 +44,14 @@ TIGHT = 0.15  # a pass with less than 15 % margin is drawn amber
 
 
 def run_stress(controller, options, maneuvers, conditions, seeds, criteria,
-               jobs, out, progress, controller_block=None):
+               jobs, out, progress, controller_block=None, aeb=False):
     """Background job: build the campaign plan, run it, write the reports."""
     from cacc import campaign as cp
     from cacc.reporting import write_all
 
     plan = cp.build_plan(controller, maneuvers, conditions, seeds=seeds,
                          criteria=criteria, options=options,
-                         controller_block=controller_block)
+                         controller_block=controller_block, aeb=aeb)
     report = cp.run_campaign(plan, jobs=jobs, progress=progress)
     write_all(report, out)
     return report, out
@@ -99,7 +106,10 @@ class StressPage(Page):
         self.ctrl.currentIndexChanged.connect(
             lambda: self.plugin.setEnabled(self.ctrl.currentData() == "plugin"))
         self.preset = QComboBox()
-        self.preset.addItems(("Quick (21 cells)", "Full (90 cells)"))
+        self.preset.addItems(tuple(
+            f"{title} ({len(cp.PRESETS[name][0]) * len(cp.PRESETS[name][1])} cells)"
+            for name, title in (("quick", "Quick"), ("full", "Full"),
+                                ("crash-db", "Crash database"))))
         self.preset.currentIndexChanged.connect(self._apply_preset)
         self.seeds = QSpinBox()
         self.seeds.setRange(1, 20)
@@ -107,9 +117,12 @@ class StressPage(Page):
         self.jobs = QSpinBox()
         self.jobs.setRange(1, max(1, os.cpu_count() or 1))
         self.jobs.setValue(max(1, min(8, (os.cpu_count() or 2) - 1)))
+        self.aeb = QCheckBox("+ AEB")
+        self.aeb.setToolTip("Put the automatic emergency-braking layer under the "
+                            "controller (radar only; brakes when a crash is imminent)")
         for text, w in (("Controller", self.ctrl), (None, self.plugin),
                         ("Preset", self.preset), ("Seeds", self.seeds),
-                        ("Workers", self.jobs)):
+                        ("Workers", self.jobs), (None, self.aeb)):
             if text:
                 row.addWidget(label(text, wrap=False))
             row.addWidget(w, 2 if w is self.plugin else 0)
@@ -170,8 +183,19 @@ class StressPage(Page):
         self.grid.verticalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.grid.cellClicked.connect(self._open_cell)
         self.telemetry = Telemetry()
+        self.view3d = Replay3DPanel()
+        self.view3d.frame_changed.connect(self.telemetry.set_cursor)
+        self.why = WhyPanel()
+        self.breaking = BreakPanel(self._under_test)
+        self.energy = EnergyPanel()
+        self.versions = VersionsPanel(lambda: output_dir("stress", "x").parent / "versions")
+        self.tabs = QTabWidget()
+        for w, name in ((self.telemetry, "Traces"), (self.view3d, "3-D replay"),
+                        (self.why, "Why it failed"), (self.breaking, "Breaking point"),
+                        (self.energy, "Energy && comfort"), (self.versions, "Versions")):
+            self.tabs.addTab(w, name)
         right.addWidget(self.grid)
-        right.addWidget(self.telemetry)
+        right.addWidget(self.tabs)
         right.setSizes([330, 520])
         split.addWidget(right)
         split.setSizes([280, 1000])
@@ -196,7 +220,7 @@ class StressPage(Page):
                 if w.item(i).checkState() == Qt.Checked]
 
     def _apply_preset(self) -> None:
-        man, cond = self.cp.PRESETS["full" if self.preset.currentIndex() else "quick"]
+        man, cond = self.cp.PRESETS[("quick", "full", "crash-db")[self.preset.currentIndex()]]
         for w, keys in ((self.man_list, man), (self.cond_list, cond)):
             for i in range(w.count()):
                 it = w.item(i)
@@ -230,12 +254,25 @@ class StressPage(Page):
             return None
         return ref
 
+    def _criteria(self) -> list[str]:
+        return [ln.strip() for ln in self.criteria.toPlainText().splitlines()
+                if ln.strip()]
+
+    def _under_test(self):
+        """(controller, options, controller block, criteria, workers) or None."""
+        ctrl = self._controller()
+        if ctrl is None:
+            return None
+        lab = self.ctrl.currentData() == "lab"
+        return (ctrl, self.lab_design.options if lab else {},
+                self.lab_design.controller_block if lab else None,
+                self._criteria() or list(self.cp.DEFAULT_CRITERIA), self.jobs.value())
+
     # ------------------------------------------------------------ run
     def _run(self) -> None:
         ctrl = self._controller()
         man, cond = self._checked(self.man_list), self._checked(self.cond_list)
-        crit = [ln.strip() for ln in self.criteria.toPlainText().splitlines()
-                if ln.strip()]
+        crit = self._criteria()
         if ctrl is None:
             return
         if not man or not cond or not crit:
@@ -256,7 +293,7 @@ class StressPage(Page):
                               else Path(ctrl.split(":")[-1]).stem or ctrl)
         run_job(run_stress, ctrl, self.options, man, cond, self.seeds.value(), crit,
                 self.jobs.value(), self.out, self.progress.tick.emit, block,
-                on_done=self._done, on_error=self._failed)
+                self.aeb.isChecked(), on_done=self._done, on_error=self._failed)
 
     def _tick(self, done: int, total: int) -> None:
         self.bar.setRange(0, total)
@@ -278,7 +315,9 @@ class StressPage(Page):
         self.badge.set(rep["verdict"], f"{c['PASS']} pass · {c['FAIL']} fail"
                        + (f" · {c['ERROR']} error" if c["ERROR"] else ""))
         self.status.setText(f"{len(rep['cases'])} cells · {len(rep['seeds'])} "
-                            f"seed(s) · {rep['elapsed_s']:.1f} s")
+                            f"seed(s) · {rep['elapsed_s']:.1f} s"
+                            + (" · AEB on" if rep["campaign"].get("aeb") else ""))
+        self.versions.set_report(rep)
         self._fill_grid()
 
     def _set_baseline(self) -> None:
@@ -338,6 +377,25 @@ class StressPage(Page):
         seed = cell["worst_seed"] or self.report["seeds"][0]
         title = f"{cell['name']}  ·  seed {seed}  ·  {cell['verdict']}"
         self.telemetry.heading.setText(f"Replaying {title}…")
+        i = self.breaking.man.findData(cell["name"].split(" | ")[0])
+        if i >= 0:
+            self.breaking.man.setCurrentIndex(i)
+        if cell["verdict"] == "FAIL":
+            self.why.busy(cell["name"])
+        else:
+            self.why.passed(cell)
         run_job(replay_cell, case, self.controller, seed, self.options,
-                on_done=lambda res: self.telemetry.show_run(res, title),
+                on_done=lambda res: self._replayed(res, title, cell, seed),
                 on_error=lambda m: QMessageBox.critical(self, "Replay failed", m))
+
+    def _replayed(self, res, title: str, cell: dict, seed: int) -> None:
+        from cacc.gui.stress_insight import run_explain
+
+        self.telemetry.show_run(res, title)
+        self.view3d.set_result(res)
+        self.energy.set_result(res)
+        if cell["verdict"] == "FAIL":
+            run_job(run_explain, self.report, cell["name"], self.controller,
+                    self.options, seed, res, self.jobs.value(),
+                    on_done=self.why.show,
+                    on_error=lambda m: self.why.text.setPlainText(m))

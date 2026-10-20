@@ -257,7 +257,7 @@ def cmd_stress(args) -> int:
     plan = cp.build_plan(
         ref, maneuvers=man, conditions=cond, seeds=args.seeds,
         criteria=args.criterion or cp.DEFAULT_CRITERIA,
-        options=options, base=args.base, controller_block=block)
+        options=options, base=args.base, controller_block=block, aeb=args.aeb)
     n = len(plan.cases)
     print(f"cacc {cacc.__version__} · stress campaign: {args.controller}, "
           f"{n} cell(s) x {len(plan.seeds)} seed(s) · {args.jobs} worker(s)",
@@ -351,7 +351,9 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("-c", "--controller", default="cthp",
                     help="acc | cacc | cthp | module:Name | file.py:Name | "
                     "Controller Lab design .yaml")
-    st.add_argument("--preset", choices=("quick", "full"), default="quick")
+    st.add_argument("--preset", choices=("quick", "full", "crash-db"), default="quick")
+    st.add_argument("--aeb", action="store_true",
+                    help="put the emergency-braking layer under the controller")
     st.add_argument("-m", "--maneuvers", nargs="+", help="override the preset")
     st.add_argument("-k", "--conditions", nargs="+", help="override the preset")
     st.add_argument("--criterion", action="append", metavar="RULE",
@@ -375,9 +377,11 @@ def build_parser() -> argparse.ArgumentParser:
                        "(needs pip install -e \".[gui]\")")
     g.set_defaults(fn=cmd_gui)
 
-    from cacc.cli_tools import register
+    from cacc import cli_insight, cli_safety, cli_tools
 
-    register(sub)
+    cli_tools.register(sub)
+    cli_insight.register(sub)
+    cli_safety.register(sub)
     return p
 
 

@@ -95,7 +95,7 @@ jobs:
       - uses: Mannava-Daasaradhi/Adaptive-Cruise-Control@main
         with:
           controller: controllers/my_controller.py:MyController
-          preset: quick            # or full: the 90-cell grid
+          preset: quick            # or full: the whole grid
           out: results/stress
 '''
 

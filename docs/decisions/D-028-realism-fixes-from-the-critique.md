@@ -43,13 +43,18 @@ reproduce. The new options are what a realistic study or audit should use.
 
 | radar lag [s] | h = 0.95 s original | h = 0.95 s lag-matched | h = 0.8 s original | h = 0.8 s lag-matched |
 |---|---|---|---|---|
-| 0.0 | 2.71 | 2.71 | 0.16 | 0.16 |
-| 0.3 | 2.70 | 2.74 | **−0.26** | 0.10 |
-| 0.5 | 2.04 | 2.74 | **−0.93** | 0.09 |
-| 0.8 | 0.83 | 2.76 | **−2.14** | 0.08 |
-| 1.2 | **−2.91** | 2.77 | **−6.02** | 0.05 |
+| 0.0 | 3.52 | 3.52 | 1.19 | 1.19 |
+| 0.3 | 3.47 | 3.54 | 0.79 | 1.23 |
+| 0.5 | 2.86 | 3.54 | 0.01 | 1.21 |
+| 0.8 | 1.71 | 3.54 | **−1.27** | 1.21 |
+| 1.2 | **−0.49** | 3.53 | **−3.48** | 1.22 |
 
-Ungated: 2.74 m (h = 0.95 s) and 0.11 m (h = 0.8 s). Negative = collision.
+Ungated: 3.54 m (h = 0.95 s) and 1.23 m (h = 0.8 s). Negative = collision.
+(Re-run 2026-10-20 after the standstill fix: the simulator used to let a car
+keep "braking" below 0 m/s and roll backwards, and this −7 m/s² × 3 s brake
+from 20 m/s stops the leader at 2.86 s. The first table overstated the
+collisions; the conclusion, original gate unsafe at large lag, lag-matched
+gate within 0.04 m of ungated, is unchanged.)
 Under a sudden +5 m/s² spoof at 0.3 s lag the minimum gap is 8.18 m with the
 original gate, 7.49 m lag-matched and −30.64 m ungated. `trust_braking` passes
 a −5 m/s² phantom-brake spoof unbounded (peak spacing error 53 m, same as

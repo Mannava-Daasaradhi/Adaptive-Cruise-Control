@@ -137,12 +137,54 @@ def read_openacc(path: str | Path) -> PlatoonLog:
     return _uniform(PlatoonLog(t, speed, gap, names, engaged, str(path), meta))
 
 
+# ------------------------------------------------------------- microSIM-ACC
+def read_microsim(path: str | Path) -> PlatoonLog:
+    """Read one two-car run of the FAU microSIM-ACC "ICE" experiments.
+
+    Layout (github.com/microSIM-ACC/ICE, CCF runs): OBD speeds ``speed``
+    (leader) and ``speed.1`` (ACC follower) in km/h at 5 Hz with ISO time
+    stamps, and ``spacing`` [m], the bumper gap. File names read
+    ``<from mph>_<to mph>_<setting>_<rep>.csv`` with the follower's ACC gap
+    setting S / M / L, which becomes the follower's name so a study groups
+    by setting.
+    """
+    path = Path(path)
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    col = {name.strip(): j for j, name in enumerate(rows[0])}
+    need = ("timestamps", "speed", "speed.1", "spacing")
+    if not all(c in col for c in need):
+        raise ValueError(f"{path}: not a microSIM-ACC run (needs columns "
+                         f"{', '.join(need)})")
+    from datetime import datetime
+
+    body = [r for r in rows[1:] if len(r) > max(col[c] for c in need)
+            and r[col["timestamps"]].strip()]
+    stamps = [datetime.fromisoformat(r[col["timestamps"]].strip()[:26]
+                                     + r[col["timestamps"]].strip()[-6:])
+              for r in body]
+    t = np.array([(s - stamps[0]).total_seconds() for s in stamps])
+    speed = np.column_stack([[_num(r[col[c]]) / 3.6 for r in body]
+                             for c in ("speed", "speed.1")])
+    gap = np.array([[_num(r[col["spacing"]])] for r in body])
+    parts = path.stem.split("_")
+    setting = parts[2] if len(parts) >= 3 else "?"
+    meta = {"dataset": "microSIM-ACC ICE", "from_mph": parts[0] if parts else "",
+            "to_mph": parts[1] if len(parts) > 1 else "", "setting": setting}
+    eng = np.column_stack([np.zeros(t.size, bool), np.ones(t.size, bool)])
+    return _uniform(PlatoonLog(t, speed, gap, ["leader", f"ACC gap setting {setting}"],
+                               eng, str(path), meta))
+
+
 # ------------------------------------------------------------------ generic
 def read_log(path: str | Path) -> PlatoonLog:
-    """Read a log in the generic format, or OpenACC if it looks like one."""
+    """Read a log in the generic format, or OpenACC / microSIM-ACC if it
+    looks like one."""
     path = Path(path)
     with open(path, encoding="utf-8-sig", newline="") as f:
         first = f.readline().strip().lower()
+    if "spacing" in first.split(",") and "speed.1" in first.split(","):
+        return read_microsim(path)
     if not first.startswith("time,speed_0"):
         return read_openacc(path)
     data = np.genfromtxt(path, delimiter=",", names=True, dtype=float)

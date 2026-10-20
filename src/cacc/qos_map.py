@@ -90,3 +90,21 @@ class QoSMap:
                 sched.append((float(t) if sched else 0.0, rho))
                 last = rho
         return tuple(sched)
+
+
+def link_schedules(qmap: QoSMap, config, leader_accel, gap0: float):
+    """Per-link rho step schedules of a platoon from the spatial map (D-021).
+
+    Each link's channel is driven by the position of its follower along a
+    nominal (maneuver-integrated) trajectory: follower ``i`` trails the
+    leader by ``(i+1)`` standoff gaps ``gap0``, so it enters a patch that
+    much later. Small closed-loop spacing ripples don't change which (large)
+    patch a vehicle is in, so the nominal trajectory is exact enough.
+    """
+    n, dt = config.n_followers, config.dt
+    tg = np.arange(0.0, config.t_final + dt, dt)
+    a0 = np.array([leader_accel(float(t)) for t in tg])
+    v = config.v0 + np.concatenate(
+        [[0.0], np.cumsum(0.5 * (a0[1:] + a0[:-1]) * dt)])
+    x_lead = np.concatenate([[0.0], np.cumsum(0.5 * (v[1:] + v[:-1]) * dt)])
+    return [qmap.time_schedule(tg, x_lead - (i + 1) * gap0) for i in range(n)]

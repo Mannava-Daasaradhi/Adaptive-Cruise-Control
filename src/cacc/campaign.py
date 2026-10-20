@@ -16,7 +16,13 @@ Composition rules that keep a cell physical:
   stress test, it is a scenario that cannot happen);
 * an attack window opens when the maneuver starts and lasts 15 s;
 * the controller block comes from the chosen controller family (Ploeg
-  gains for acc/cacc, Ma-2025 case-A gains for cthp; plugins keep the base).
+  gains for acc/cacc, Ma-2025 case-A gains for cthp; plugins keep the base);
+* a fault window opens when the maneuver starts unless it gives ``t0``;
+* crash-database maneuvers (:mod:`cacc.crashlib`) also set the scene
+  (lead car speed, first gap, traffic); a condition's traffic is added to it.
+
+``aeb=True`` puts the emergency-braking layer (:mod:`cacc.aeb`) under the
+controller in every cell.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from pathlib import Path
 
 import yaml
 
+from cacc import crashlib
 from cacc.ev import SURFACES, G
 from cacc.evaluate import TestPlan, evaluate, plan_from_dict
 
@@ -83,6 +90,32 @@ CONDITIONS: dict[str, tuple[str, str, dict]] = {
     "slow-brakes": ("Actuator dead time 200 ms", "powertrain",
                     {"vehicle.act_delay": 0.2}),
     "long-platoon": ("10-car platoon", "traffic", {"platoon.n_followers": 10}),
+    "human-driver": ("Human driver in car 3 (no V2V behind)", "traffic",
+                     {"traffic": {"humans": [3]}}),
+    "cut-in": ("Car cuts in ahead of car 3", "traffic",
+               {"traffic": {"cut_ins": [{"t": 10.0, "ahead_of": 3, "gap_frac": 0.5,
+                                         "dv": -2.0, "decel": -2.0,
+                                         "duration": 1.5}]}}),
+    "v2v-blackout": ("V2V blackout 5 s (all cars)", "radio",
+                     {"faults": [{"kind": "v2v-dropout", "duration": 5.0}]}),
+    "radar-frozen": ("Radar frozen 2 s (car 1)", "faults",
+                     {"faults": [{"kind": "radar-dropout", "cars": [1],
+                                  "duration": 2.0}]}),
+    "radar-bias": ("Radar reads +3 m (car 1)", "faults",
+                   {"faults": [{"kind": "radar-bias", "cars": [1], "value": 3.0,
+                                "t0": 0.0, "duration": None}]}),
+    "radar-noise": ("Radar noise 0.5 m (all cars)", "faults",
+                    {"faults": [{"kind": "radar-noise", "value": 0.5, "t0": 0.0,
+                                 "duration": None}]}),
+    "brake-fade": ("Brake fade to 50 % (car 2)", "faults",
+                   {"faults": [{"kind": "brake-fade", "cars": [2], "value": 0.5,
+                                "t0": 0.0, "duration": None}]}),
+    "motor-derate": ("Motor derated to 40 % (all cars)", "faults",
+                     {"faults": [{"kind": "motor-derate", "value": 0.4,
+                                  "t0": 0.0, "duration": None}]}),
+    "stuck-brake": ("Dragging brake 1.5 m/s² (car 2)", "faults",
+                    {"faults": [{"kind": "stuck-brake", "cars": [2], "value": 1.5,
+                                 "t0": 0.0, "duration": None}]}),
 }
 
 #: controller-family gains (the base scenario's block is Ploeg 2014)
@@ -98,7 +131,10 @@ PRESETS = {
               ("nominal", "latency-300ms", "loss-30", "spoof", "spoof-gated",
                "wet", "slow-brakes")),
     "full": (tuple(MANEUVERS), tuple(CONDITIONS)),
+    "crash-db": (tuple(crashlib.MANEUVERS),
+                 ("nominal", "latency-300ms", "wet", "radar-frozen", "brake-fade")),
 }
+MANEUVERS.update(crashlib.MANEUVERS)  # (label, leader, t_start, t_final, edits)
 
 
 def _set(tree: dict, path: str, value) -> None:
@@ -118,17 +154,33 @@ def compose(base: dict, maneuver: str, condition: str, controller: str) -> dict:
         raise ValueError(f"unknown condition {condition!r}; use one of "
                          f"{', '.join(CONDITIONS)}")
     tree = copy.deepcopy(base)
-    _, leader, t_start, t_final = MANEUVERS[maneuver]
+    _, leader, t_start, t_final, *scene = MANEUVERS[maneuver]
     tree["leader"] = copy.deepcopy(leader)
     _set(tree, "sim.t_final", t_final)
     fam = controller.lower()
     if fam in FAMILY_GAINS:
         tree["controller"] = dict(FAMILY_GAINS[fam])
+    for path, value in (scene[0] if scene else {}).items():
+        _set(tree, path, value)
     for path, value in CONDITIONS[condition][2].items():
+        if path == "traffic" and "traffic" in tree:  # both bring cars: keep all
+            merged = tree["traffic"]
+            for key, val in value.items():
+                merged[key] = (list(merged.get(key) or []) + copy.deepcopy(list(val))
+                               if isinstance(val, list) else copy.deepcopy(val))
+            continue
         _set(tree, path, value)
     if "attack" in tree:
         tree["attack"].setdefault("t0", t_start)
         tree["attack"].setdefault("t1", t_start + 15.0)
+    for f in tree.get("faults") or ():
+        f.setdefault("t0", t_start)
+    return cap_leader(tree, t_start, t_final)
+
+
+def cap_leader(tree: dict, t_start: float = 10.0, t_final: float = 45.0) -> dict:
+    """The lead car is on the followers' road: cap its braking (and
+    acceleration) at the surface grip ``mu*g``, keeping the speed drop."""
     ev = tree.get("ev") or {}
     mu = ev.get("mu", SURFACES.get(ev.get("surface", "dry"), SURFACES["dry"]))
     if tree["leader"].get("profile") == "brake" and "ev" in tree:
@@ -147,7 +199,8 @@ def build_plan(controller: str = "cthp", maneuvers=None, conditions=None,
                seeds: int = 2, criteria=DEFAULT_CRITERIA, options=None,
                base: str | Path | dict | None = None,
                name: str = "stress-campaign",
-               controller_block: dict | None = None) -> TestPlan:
+               controller_block: dict | None = None,
+               aeb: bool = False) -> TestPlan:
     """A :class:`TestPlan` with one case per (maneuver, condition) cell.
 
     ``controller_block`` overrides entries of the base scenario's
@@ -164,6 +217,8 @@ def build_plan(controller: str = "cthp", maneuvers=None, conditions=None,
         root = path.parent
     if controller_block:
         base_tree.setdefault("controller", {}).update(controller_block)
+    if aeb:
+        base_tree["aeb"] = {"enabled": True}
     if controller.lower() == "acc":  # nothing travels over V2V
         conditions = [c for c in conditions
                       if CONDITIONS[c][1] not in ("radio", "security")] or ["nominal"]
@@ -172,12 +227,12 @@ def build_plan(controller: str = "cthp", maneuvers=None, conditions=None,
              for m in maneuvers for c in conditions]
     raw = {"name": name,
            "description": f"{len(maneuvers)} maneuver(s) x {len(conditions)} "
-                          "condition(s) stress campaign",
+                          "condition(s) stress campaign" + (" + AEB" if aeb else ""),
            "scenario": base_tree,
            "under_test": {"controller": controller, "options": options or {}},
            "seeds": seeds, "cases": cases, "criteria": list(criteria)}
     plan = plan_from_dict(raw, root=root)
-    plan.campaign = {"maneuvers": maneuvers, "conditions": conditions}
+    plan.campaign = {"maneuvers": maneuvers, "conditions": conditions, "aeb": aeb}
     return plan
 
 
@@ -225,6 +280,7 @@ def run_campaign(plan: TestPlan, jobs: int = 1, progress=None) -> dict:
     report = evaluate(plan, jobs=jobs, progress=progress)
     camp = plan.campaign
     report["campaign"] = {
+        "aeb": bool(camp.get("aeb")),
         "maneuvers": [{"key": m, "label": MANEUVERS[m][0]} for m in camp["maneuvers"]],
         "conditions": [{"key": c, "label": CONDITIONS[c][0],
                         "group": CONDITIONS[c][1]} for c in camp["conditions"]],

@@ -34,8 +34,8 @@ def window(app):
 
 
 def test_window_builds_and_navigates(window):
-    assert window.stack.count() == 6
-    for key in ("audit", "evaluate", "lab", "stress", "simulate", "setup"):
+    assert window.stack.count() == 7
+    for key in ("audit", "evaluate", "lab", "stress", "standards", "simulate", "setup"):
         window.show_page(key)
         assert window.stack.currentWidget() is window.pages[key]
 
@@ -160,3 +160,96 @@ def test_controller_lab_live_analysis_inside_view_and_handoff(window):
     assert window.stack.currentWidget() is stress
     assert stress.ctrl.currentData() == "lab" and stress._controller() == "cacc.tfctrl:TFController"
     assert stress.lab_design.options["blocks"]["e"] == "0.2/(h*s + 1)"
+
+
+def test_stress_insight_tabs_3d_why_and_breaking_point(window):
+    import numpy as np
+
+    from cacc import campaign as cp
+    from cacc.explain import explain
+
+    page = window.pages["stress"]
+    assert [page.tabs.tabText(i) for i in range(page.tabs.count())] == [
+        "Traces", "3-D replay", "Why it failed", "Breaking point", "Energy && comfort",
+        "Versions"]
+    report = cp.run_campaign(cp.build_plan("cacc", ["hard-brake"], ["cut-in"], seeds=1))
+    page._done((report, None))
+    cell = report["campaign"]["grid"][0][0]
+    res = cp.replay(report["cases"][0], "cacc", cell["worst_seed"])
+    page._replayed(res, "cut-in", dict(cell, verdict="PASS"), 1)  # no explain job
+    v = page.view3d
+    assert v.view.crash and v.jump.isEnabled() and v.slider.maximum() == len(res.t) - 1
+    for mode in ("Drone", "Chase", "Side"):
+        v.cam.setCurrentText(mode)
+        v.slider.setValue(1400)
+        img = v.view.grab().toImage()
+        assert img.width() > 0 and img.pixelColor(10, 10).isValid()
+    v.view.set_frame(10**6)
+    assert v.view.k == len(res.t) - 1
+    page.why.show(explain(report, cell["name"], res=res, verify=False))
+    assert "hit the car in front" in page.why.text.toPlainText()
+    rows = [{"label": "V2V latency", "status": "holds", "fraction": 1.0,
+             "value": 1.0, "unit": "s", "text": "holds"},
+            {"label": "Road grip μ", "status": "breaks", "fraction": 0.4,
+             "value": 0.6, "unit": "", "text": "breaks at 0.6"}]
+    page.breaking.show_profile(sorted(rows, key=lambda r: r["fraction"]))
+    assert page.breaking.status.text().startswith("Weakest: Road grip")
+    page.breaking.show_map({"x": [0, 1], "y": [0, 1], "x_label": "x", "y_label": "y",
+                            "margin": np.array([[0.5, -0.2], [0.1, -1.0]]),
+                            "verdict": np.array([["PASS", "FAIL"], ["PASS", "FAIL"]]),
+                            "pass_share": 0.5})
+    assert "50%" in page.breaking.status.text()
+    ctx = page._under_test()
+    assert ctx[0] == page._controller() and ctx[3]
+
+
+def test_lab_auto_tune_loads_the_result(window):
+    from cacc import tfctrl as tc
+    from cacc.autotune import TuneResult
+
+    lab = window.pages["lab"]
+    d = tc.Design.preset("lag-ff")
+    tuned = tc.Design(dict(d.blocks, e="0.3"), "a", 0.8, 2.5, "lag-ff-tuned")
+    from PySide6.QtWidgets import QMessageBox
+
+    orig = QMessageBox.information
+    QMessageBox.information = staticmethod(lambda *a, **k: None)
+    try:
+        lab._tuned(TuneResult(tuned, d, True, feasible=3))
+    finally:
+        QMessageBox.information = orig
+    assert lab.edits["e"].text() == "0.3" and lab.h.value() == 0.8
+    assert lab.tune_btn.isEnabled()
+
+
+def test_aeb_energy_versions_and_standards(window, tmp_path):
+    from cacc import campaign as cp
+    from cacc import standards as st
+
+    page = window.pages["stress"]
+    page.versions.store_fn = lambda: tmp_path / "versions"
+    page.preset.setCurrentIndex(2)  # crash-db
+    assert "nhtsa-lvs" in page._checked(page.man_list)
+    page.aeb.setChecked(True)
+    report = cp.run_campaign(cp.build_plan("cacc", ["hard-brake"], ["cut-in"], seeds=1,
+                                           aeb=page.aeb.isChecked()))
+    page._done((report, None))
+    assert "AEB on" in page.status.text() and page.grid.item(0, 0).text().startswith("✓")
+    cell = report["campaign"]["grid"][0][0]
+    res = cp.replay(report["cases"][0], "cacc", cell["worst_seed"])
+    page._replayed(res, "cut-in + AEB", cell, 1)
+    assert "Wh" in page.energy.summary.text()
+    page.view3d.slider.setValue(1100)
+    assert page.view3d.view.grab().toImage().width() > 0
+    for name in ("v1", "v2"):
+        page.versions.name.setText(name)
+        page.versions.save()
+    assert page.versions.table.columnCount() == 2
+    assert "v1 → v2" in page.versions.diff.toPlainText()
+    std = window.pages["standards"]
+    rows = [dict(r, status=s_, evidence="x", value=1.0)
+            for r, s_ in zip((dict(zip(("id", "standard", "requirement"), q[:3]),
+                                   rule="min_gap > 0") for q in st.REQUIREMENTS[:3]),
+                             ("PASS", "FAIL", "REVIEW"))]
+    std.show_result({"rows": rows})
+    assert std.table.rowCount() == 3 and std.table.item(1, 0).text() == "✕ FAIL"
